@@ -91,13 +91,15 @@ class TestGenerateHourlyChunks(unittest.TestCase):
 class TestDownloadWithRetry(unittest.TestCase):
     """Test download with retry logic."""
     
+    @patch('download_scheduler.transcoder.run_whisper')
     @patch('download_scheduler.transcoder.transcode_to_wav')
     @patch('download_scheduler.downloader_adapter.download_chunk')
     @patch('download_scheduler.time.sleep')
-    def test_successful_download(self, mock_sleep, mock_download, mock_transcode):
+    def test_successful_download(self, mock_sleep, mock_download, mock_transcode, mock_whisper):
         """Test successful download on first attempt."""
         mock_download.return_value = "/path/to/video.mp4"
         mock_transcode.return_value = "/path/to/audio.wav"
+        mock_whisper.return_value = "/path/to/transcript.txt"
         
         result = download_scheduler.download_with_retry(
             camera_id='cam1',
@@ -111,15 +113,17 @@ class TestDownloadWithRetry(unittest.TestCase):
             max_retries=3,
         )
         
-        self.assertEqual(result, "/path/to/audio.wav")
+        self.assertEqual(result, "/path/to/transcript.txt")
         self.assertEqual(mock_download.call_count, 1)
         self.assertEqual(mock_transcode.call_count, 1)
+        self.assertEqual(mock_whisper.call_count, 1)
         mock_sleep.assert_not_called()
     
+    @patch('download_scheduler.transcoder.run_whisper')
     @patch('download_scheduler.transcoder.transcode_to_wav')
     @patch('download_scheduler.downloader_adapter.download_chunk')
     @patch('download_scheduler.time.sleep')
-    def test_retry_on_failure(self, mock_sleep, mock_download, mock_transcode):
+    def test_retry_on_failure(self, mock_sleep, mock_download, mock_transcode, mock_whisper):
         """Test retry logic on transient failure."""
         # Fail twice, then succeed
         mock_download.side_effect = [
@@ -128,6 +132,7 @@ class TestDownloadWithRetry(unittest.TestCase):
             "/path/to/video.mp4"
         ]
         mock_transcode.return_value = "/path/to/audio.wav"
+        mock_whisper.return_value = "/path/to/transcript.txt"
         
         result = download_scheduler.download_with_retry(
             camera_id='cam1',
@@ -142,16 +147,18 @@ class TestDownloadWithRetry(unittest.TestCase):
             initial_backoff=1.0,
         )
         
-        self.assertEqual(result, "/path/to/audio.wav")
+        self.assertEqual(result, "/path/to/transcript.txt")
         self.assertEqual(mock_download.call_count, 3)
         self.assertEqual(mock_transcode.call_count, 1)
+        self.assertEqual(mock_whisper.call_count, 1)
         # Should have slept twice (after first two failures)
         self.assertEqual(mock_sleep.call_count, 2)
     
+    @patch('download_scheduler.transcoder.run_whisper')
     @patch('download_scheduler.transcoder.transcode_to_wav')
     @patch('download_scheduler.downloader_adapter.download_chunk')
     @patch('download_scheduler.time.sleep')
-    def test_exponential_backoff(self, mock_sleep, mock_download, mock_transcode):
+    def test_exponential_backoff(self, mock_sleep, mock_download, mock_transcode, mock_whisper):
         """Test exponential backoff on retries."""
         mock_download.side_effect = [
             Exception("Error 1"),
@@ -160,6 +167,7 @@ class TestDownloadWithRetry(unittest.TestCase):
             "/path/to/video.mp4"
         ]
         mock_transcode.return_value = "/path/to/audio.wav"
+        mock_whisper.return_value = "/path/to/transcript.txt"
         
         result = download_scheduler.download_with_retry(
             camera_id='cam1',
@@ -175,23 +183,25 @@ class TestDownloadWithRetry(unittest.TestCase):
             max_backoff=100.0,
         )
         
-        self.assertEqual(result, "/path/to/audio.wav")
+        self.assertEqual(result, "/path/to/transcript.txt")
         # Verify exponential backoff pattern: 1, 2, 4
         calls = mock_sleep.call_args_list
         self.assertEqual(calls[0][0][0], 1.0)
         self.assertEqual(calls[1][0][0], 2.0)
         self.assertEqual(calls[2][0][0], 4.0)
     
+    @patch('download_scheduler.transcoder.run_whisper')
     @patch('download_scheduler.transcoder.transcode_to_wav')
     @patch('download_scheduler.downloader_adapter.download_chunk')
     @patch('download_scheduler.time.sleep')
-    def test_rate_limit_handling(self, mock_sleep, mock_download, mock_transcode):
+    def test_rate_limit_handling(self, mock_sleep, mock_download, mock_transcode, mock_whisper):
         """Test special handling for rate limit errors."""
         mock_download.side_effect = [
             Exception("429 Too Many Requests"),
             "/path/to/video.mp4"
         ]
         mock_transcode.return_value = "/path/to/audio.wav"
+        mock_whisper.return_value = "/path/to/transcript.txt"
         
         result = download_scheduler.download_with_retry(
             camera_id='cam1',
@@ -206,14 +216,15 @@ class TestDownloadWithRetry(unittest.TestCase):
             initial_backoff=1.0,
         )
         
-        self.assertEqual(result, "/path/to/audio.wav")
+        self.assertEqual(result, "/path/to/transcript.txt")
         # Rate limit should trigger longer backoff (2x)
         self.assertEqual(mock_sleep.call_args[0][0], 2.0)
     
+    @patch('download_scheduler.transcoder.run_whisper')
     @patch('download_scheduler.transcoder.transcode_to_wav')
     @patch('download_scheduler.downloader_adapter.download_chunk')
     @patch('download_scheduler.time.sleep')
-    def test_max_retries_exceeded(self, mock_sleep, mock_download, mock_transcode):
+    def test_max_retries_exceeded(self, mock_sleep, mock_download, mock_transcode, mock_whisper):
         """Test failure after exceeding max retries."""
         mock_download.side_effect = Exception("Persistent error")
         
@@ -233,8 +244,9 @@ class TestDownloadWithRetry(unittest.TestCase):
         self.assertIsNone(result)
         # Should attempt 3 times total (initial + 2 retries)
         self.assertEqual(mock_download.call_count, 3)
-        # Transcode should not be called if download never succeeded
+        # Transcode and whisper should not be called if download never succeeded
         mock_transcode.assert_not_called()
+        mock_whisper.assert_not_called()
 
 
 class TestDownloadFootageSequential(unittest.TestCase):
