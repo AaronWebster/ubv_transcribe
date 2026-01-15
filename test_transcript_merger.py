@@ -9,6 +9,7 @@ Markdown files with deduplication and timestamp tracking.
 import unittest
 import tempfile
 import os
+import shutil
 from pathlib import Path
 from datetime import datetime
 import pytz
@@ -60,7 +61,6 @@ class TestGetDailyTranscriptPath(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup test files."""
-        import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
@@ -121,7 +121,6 @@ class TestLoadProcessedChunks(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup test files."""
-        import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
@@ -171,7 +170,6 @@ class TestAppendTranscriptChunk(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup test files."""
-        import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
@@ -280,7 +278,6 @@ class TestMergeTranscriptChunk(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup test files."""
-        import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
@@ -422,7 +419,6 @@ class TestIsChunkAlreadyProcessed(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup test files."""
-        import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
@@ -572,7 +568,6 @@ class TestAtomicWrites(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup test files."""
-        import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
@@ -661,7 +656,7 @@ class TestAtomicWrites(unittest.TestCase):
         daily_path = transcript_merger.get_daily_transcript_path(
             self.transcripts_dir,
             "Front Door",
-            datetime(2024, 1, 15),
+            self.tz.localize(datetime(2024, 1, 15, 0, 0, 0)),
         )
         
         # Append multiple chunks

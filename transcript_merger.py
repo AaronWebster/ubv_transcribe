@@ -198,16 +198,20 @@ def append_transcript_chunk(
     # Check if file exists to determine if we need to write a header
     file_exists = transcript_path.exists()
     
-    # Create temporary file in the same directory as the target file
-    # This ensures the temp file is on the same filesystem for atomic rename
-    temp_fd, temp_path = tempfile.mkstemp(
-        dir=transcript_path.parent,
-        prefix='.tmp_transcript_',
-        suffix='.md',
-        text=True
-    )
+    # Initialize variables for cleanup
+    temp_fd = None
+    temp_path = None
     
     try:
+        # Create temporary file in the same directory as the target file
+        # This ensures the temp file is on the same filesystem for atomic rename
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=transcript_path.parent,
+            prefix='.tmp_transcript_',
+            suffix='.md',
+            text=True
+        )
+        
         # If the file already exists, copy its contents to the temp file first
         if file_exists:
             with open(transcript_path, 'r', encoding='utf-8') as src:
@@ -253,7 +257,7 @@ def append_transcript_chunk(
                 os.close(temp_fd)
             except Exception:
                 pass
-        if os.path.exists(temp_path):
+        if temp_path is not None and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except Exception:
