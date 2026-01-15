@@ -118,6 +118,18 @@ def download_with_retry(
         failed after all retries. Note that merging failures are logged but do not cause 
         the function to return None - the transcript file path is still returned.
     """
+    # Check if chunk is already processed (idempotency check)
+    if transcripts_dir and transcript_merger.is_chunk_already_processed(
+        transcripts_dir=transcripts_dir,
+        camera_name=camera_name,
+        start_dt=start_dt,
+    ):
+        logging.info(
+            f"Skipping already-processed chunk for {camera_name} "
+            f"({start_dt.strftime('%Y-%m-%d %H:%M')} to {end_dt.strftime('%H:%M')})"
+        )
+        return "skipped"  # Return a sentinel value to indicate skip
+    
     backoff = initial_backoff
     
     for attempt in range(max_retries + 1):

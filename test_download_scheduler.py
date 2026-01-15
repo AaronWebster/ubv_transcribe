@@ -409,5 +409,127 @@ class TestDownloadFootageSequential(unittest.TestCase):
         mock_download.assert_not_called()
 
 
+class TestIdempotentBehavior(unittest.TestCase):
+    """Test idempotent behavior - avoiding re-transcription of already-processed chunks."""
+    
+    @patch('download_scheduler.transcript_merger.is_chunk_already_processed')
+    @patch('download_scheduler.transcoder.run_whisper')
+    @patch('download_scheduler.transcoder.transcode_to_wav')
+    @patch('download_scheduler.downloader_adapter.download_chunk')
+    def test_skip_already_processed_chunk(self, mock_download, mock_transcode, mock_whisper, mock_is_processed):
+        """Test that already-processed chunks are skipped entirely."""
+        import tempfile
+        from pathlib import Path
+        
+        # Simulate that the chunk is already processed
+        mock_is_processed.return_value = True
+        
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        result = download_scheduler.download_with_retry(
+            camera_id='cam1',
+            camera_name='Test Camera',
+            start_dt=datetime.now(pytz.UTC),
+            end_dt=datetime.now(pytz.UTC) + timedelta(hours=1),
+            out_path='/tmp/videos',
+            address='https://test.local',
+            username='test',
+            password='test',
+            transcripts_dir=temp_dir,
+        )
+        
+        # Should return "skipped" sentinel value
+        self.assertEqual(result, "skipped")
+        
+        # Verify that is_chunk_already_processed was called
+        self.assertEqual(mock_is_processed.call_count, 1)
+        
+        # Verify that download, transcode, and whisper were NOT called
+        mock_download.assert_not_called()
+        mock_transcode.assert_not_called()
+        mock_whisper.assert_not_called()
+        
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir)
+    
+    @patch('download_scheduler.transcript_merger.is_chunk_already_processed')
+    @patch('download_scheduler.transcoder.run_whisper')
+    @patch('download_scheduler.transcoder.transcode_to_wav')
+    @patch('download_scheduler.downloader_adapter.download_chunk')
+    def test_process_new_chunk(self, mock_download, mock_transcode, mock_whisper, mock_is_processed):
+        """Test that new chunks are still processed normally."""
+        import tempfile
+        from pathlib import Path
+        
+        # Simulate that the chunk is NOT already processed
+        mock_is_processed.return_value = False
+        mock_download.return_value = "/path/to/video.mp4"
+        mock_transcode.return_value = "/path/to/audio.wav"
+        mock_whisper.return_value = "/path/to/transcript.txt"
+        
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        result = download_scheduler.download_with_retry(
+            camera_id='cam1',
+            camera_name='Test Camera',
+            start_dt=datetime.now(pytz.UTC),
+            end_dt=datetime.now(pytz.UTC) + timedelta(hours=1),
+            out_path='/tmp/videos',
+            address='https://test.local',
+            username='test',
+            password='test',
+            transcripts_dir=temp_dir,
+        )
+        
+        # Should return the transcript path
+        self.assertEqual(result, "/path/to/transcript.txt")
+        
+        # Verify that is_chunk_already_processed was called
+        self.assertEqual(mock_is_processed.call_count, 1)
+        
+        # Verify that download, transcode, and whisper WERE called
+        self.assertEqual(mock_download.call_count, 1)
+        self.assertEqual(mock_transcode.call_count, 1)
+        self.assertEqual(mock_whisper.call_count, 1)
+        
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir)
+    
+    @patch('download_scheduler.transcript_merger.is_chunk_already_processed')
+    @patch('download_scheduler.transcoder.run_whisper')
+    @patch('download_scheduler.transcoder.transcode_to_wav')
+    @patch('download_scheduler.downloader_adapter.download_chunk')
+    def test_no_transcripts_dir_skips_check(self, mock_download, mock_transcode, mock_whisper, mock_is_processed):
+        """Test that idempotency check is skipped when transcripts_dir is None."""
+        mock_download.return_value = "/path/to/video.mp4"
+        mock_transcode.return_value = "/path/to/audio.wav"
+        mock_whisper.return_value = "/path/to/transcript.txt"
+        
+        result = download_scheduler.download_with_retry(
+            camera_id='cam1',
+            camera_name='Test Camera',
+            start_dt=datetime.now(pytz.UTC),
+            end_dt=datetime.now(pytz.UTC) + timedelta(hours=1),
+            out_path='/tmp/videos',
+            address='https://test.local',
+            username='test',
+            password='test',
+            transcripts_dir=None,  # No transcripts_dir
+        )
+        
+        # Should process normally
+        self.assertEqual(result, "/path/to/transcript.txt")
+        
+        # Verify that is_chunk_already_processed was NOT called
+        mock_is_processed.assert_not_called()
+        
+        # Verify that download, transcode, and whisper WERE called
+        self.assertEqual(mock_download.call_count, 1)
+        self.assertEqual(mock_transcode.call_count, 1)
+        self.assertEqual(mock_whisper.call_count, 1)
+
+
 if __name__ == '__main__':
     unittest.main()
