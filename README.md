@@ -3,6 +3,66 @@ UniFi Protect camera audio transcription app
 
 ## Features
 
+### Download Scheduler
+
+The download scheduler downloads footage in 1-hour chunks with a single concurrent stream and robust retry/backoff logic.
+
+- **Sequential processing**: Single download worker processes chunks one at a time (no parallel downloads)
+- **Hourly chunks**: Each day is partitioned into 1-hour intervals
+- **Retry/backoff**: Handles transient failures including rate limiting (429 errors) without crashing
+- **Flexible selection**: Download from all cameras or specific camera IDs
+- **Timezone aware**: Uses consistent local time (default: US/Pacific)
+
+#### Usage
+
+```bash
+# Download footage for a date range (all cameras)
+python3 ubv_transcribe.py --download --start-date 2024-01-01 --end-date 2024-01-02
+
+# Download for specific cameras only
+python3 ubv_transcribe.py --download \
+  --start-date 2024-01-01 --end-date 2024-01-02 \
+  --camera-ids abc123 def456
+
+# Use a different timezone and output directory
+python3 ubv_transcribe.py --download \
+  --start-date 2024-01-01 --end-date 2024-01-02 \
+  --timezone US/Eastern \
+  --output-dir /path/to/videos
+
+# Enable verbose logging for detailed information
+python3 ubv_transcribe.py --download \
+  --start-date 2024-01-01 --end-date 2024-01-02 \
+  --verbose
+```
+
+#### Output
+
+The download scheduler will:
+- Create hourly video chunks for each camera
+- Log progress for each chunk
+- Automatically retry failed downloads with exponential backoff
+- Provide a summary of successful and failed downloads
+
+Example output:
+```
+Starting sequential download for 2 camera(s)
+Processing 48 total chunks (2 cameras × 24 time intervals)
+
+Processing camera 1/2: Front Door (abc123)
+Downloading chunk for Front Door (2024-01-01 00:00 to 01:00)
+Successfully downloaded chunk to: videos/Front Door - 2024-01-01 - 00.00.00+0000.mp4
+...
+
+DOWNLOAD SUMMARY
+==============================================================
+Total chunks attempted: 48
+Successful downloads: 48
+Failed downloads: 0
+Success rate: 100.0%
+==============================================================
+```
+
 ### Footage Discovery
 
 The footage discovery feature allows you to iterate backward through days to determine the available footage range across all cameras.

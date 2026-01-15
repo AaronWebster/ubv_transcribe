@@ -10,12 +10,15 @@ import logging
 import os
 import sys
 import tempfile
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
+import pytz
 
-# Import the downloader adapter and footage discovery
+# Import the downloader adapter, footage discovery, and download scheduler
 import downloader_adapter
 import footage_discovery
+import download_scheduler
 
 
 def setup_logging(log_level=logging.INFO):
@@ -234,6 +237,37 @@ For more information, visit:
         help='Discover available footage date range across all cameras'
     )
     
+    parser.add_argument(
+        '--download',
+        action='store_true',
+        help='Download footage in hourly chunks with retry/backoff'
+    )
+    
+    parser.add_argument(
+        '--start-date',
+        metavar='YYYY-MM-DD',
+        help='Start date for download (required with --download)'
+    )
+    
+    parser.add_argument(
+        '--end-date',
+        metavar='YYYY-MM-DD',
+        help='End date for download (required with --download)'
+    )
+    
+    parser.add_argument(
+        '--camera-ids',
+        metavar='ID',
+        nargs='+',
+        help='Camera IDs to download (space-separated). If not specified, downloads all cameras.'
+    )
+    
+    parser.add_argument(
+        '--output-dir',
+        metavar='PATH',
+        help='Output directory for downloaded videos (default: ./videos)'
+    )
+    
     return parser.parse_args()
 
 
@@ -307,7 +341,104 @@ def main():
                 import traceback
                 logging.error(traceback.format_exc())
             return 1
-    else:
+    
+    # Download footage if requested
+    if args.download:
+        logging.info("=" * 60)
+        logging.info("DOWNLOAD SCHEDULER")
+        logging.info("=" * 60)
+        
+        # Validate required arguments
+        if not args.start_date or not args.end_date:
+            logging.error("--start-date and --end-date are required with --download")
+            logging.error("Example: --download --start-date 2024-01-01 --end-date 2024-01-02")
+            return 1
+        
+        try:
+            # Parse dates
+            tz = footage_discovery.get_timezone(args.timezone)
+            
+            try:
+                start_date_naive = datetime.strptime(args.start_date, '%Y-%m-%d')
+                start_date = tz.localize(datetime.combine(start_date_naive.date(), time.min))
+            except ValueError:
+                logging.error(f"Invalid start date format: {args.start_date}. Expected YYYY-MM-DD")
+                return 1
+            
+            try:
+                end_date_naive = datetime.strptime(args.end_date, '%Y-%m-%d')
+                # End date should be at the end of the day (midnight of next day)
+                end_date = tz.localize(datetime.combine(end_date_naive.date(), time.min)) + timedelta(days=1)
+            except ValueError:
+                logging.error(f"Invalid end date format: {args.end_date}. Expected YYYY-MM-DD")
+                return 1
+            
+            # Get camera list
+            logging.info("Retrieving camera list...")
+            all_cameras = downloader_adapter.list_cameras(
+                address=config['address'],
+                username=config['username'],
+                password=config['password'],
+            )
+            
+            # Filter cameras if specific IDs were requested
+            if args.camera_ids:
+                cameras = [cam for cam in all_cameras if cam['id'] in args.camera_ids]
+                if len(cameras) < len(args.camera_ids):
+                    found_ids = {cam['id'] for cam in cameras}
+                    missing_ids = set(args.camera_ids) - found_ids
+                    logging.warning(f"Some camera IDs not found: {missing_ids}")
+            else:
+                cameras = all_cameras
+            
+            if not cameras:
+                logging.error("No cameras to download from")
+                return 1
+            
+            logging.info(f"Will download from {len(cameras)} camera(s):")
+            for camera in cameras:
+                logging.info(f"  - {camera['name']} (ID: {camera['id']})")
+            
+            # Determine output directory
+            if args.output_dir:
+                output_dir = Path(args.output_dir)
+            else:
+                script_dir = Path(__file__).parent.absolute()
+                output_dir = script_dir / 'videos'
+            
+            output_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Output directory: {output_dir}")
+            
+            # Run the download scheduler
+            result = download_scheduler.download_footage_sequential(
+                cameras=cameras,
+                start_date=start_date,
+                end_date=end_date,
+                out_path=str(output_dir),
+                address=config['address'],
+                username=config['username'],
+                password=config['password'],
+            )
+            
+            # Report results
+            if result['failed_chunks'] > 0:
+                logging.warning(
+                    f"Download completed with {result['failed_chunks']} failed chunks. "
+                    "Check logs for details."
+                )
+                return 1
+            else:
+                logging.info("All downloads completed successfully!")
+                return 0
+                
+        except Exception as e:
+            logging.error(f"Error during download: {e}")
+            if args.verbose:
+                import traceback
+                logging.error(traceback.format_exc())
+            return 1
+    
+    if not args.discover_footage and not args.download:
         # Demonstrate the downloader adapter functionality
         logging.info("Testing downloader adapter...")
         try:
