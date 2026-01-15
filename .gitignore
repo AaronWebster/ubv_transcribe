@@ -5,6 +5,9 @@
 # Transcripts directory - created by the app but not tracked
 transcripts/
 
+# Videos directory - created by download scheduler but not tracked
+videos/
+
 # Python artifacts
 __pycache__/
 *.py[cod]
