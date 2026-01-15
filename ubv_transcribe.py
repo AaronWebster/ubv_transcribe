@@ -27,6 +27,19 @@ def setup_logging(log_level=logging.INFO):
     )
 
 
+def _show_submodule_error(message):
+    """
+    Display a clear error message about submodule initialization.
+    
+    Args:
+        message: Specific error message to display
+    """
+    logging.error(message)
+    logging.error("Please initialize the submodule with:")
+    logging.error("  git submodule update --init --recursive")
+    sys.exit(1)
+
+
 def check_submodule():
     """
     Check if the unifi-protect-video-downloader submodule is initialized.
@@ -38,17 +51,14 @@ def check_submodule():
     submodule_path = script_dir / 'unifi-protect-video-downloader'
     
     if not submodule_path.exists():
-        logging.error("Submodule 'unifi-protect-video-downloader' directory does not exist.")
-        logging.error("Please initialize the submodule with:")
-        logging.error("  git submodule update --init --recursive")
-        sys.exit(1)
+        _show_submodule_error("Submodule 'unifi-protect-video-downloader' directory does not exist.")
+    
+    if not submodule_path.is_dir():
+        _show_submodule_error("Submodule 'unifi-protect-video-downloader' path is not a directory.")
     
     # Check if submodule is empty (not initialized)
     if not any(submodule_path.iterdir()):
-        logging.error("Submodule 'unifi-protect-video-downloader' is not initialized.")
-        logging.error("Please initialize the submodule with:")
-        logging.error("  git submodule update --init --recursive")
-        sys.exit(1)
+        _show_submodule_error("Submodule 'unifi-protect-video-downloader' is not initialized.")
     
     logging.info(f"Submodule found at: {submodule_path}")
 
