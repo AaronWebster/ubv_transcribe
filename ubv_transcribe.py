@@ -13,6 +13,9 @@ import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Import the downloader adapter
+import downloader_adapter
+
 
 def setup_logging(log_level=logging.INFO):
     """
@@ -234,7 +237,7 @@ def main():
     logging.info("Starting ubv_transcribe")
     
     # Load UniFi Protect credentials
-    load_env_config(args.env_file)
+    config = load_env_config(args.env_file)
     
     # Check that the submodule is initialized
     check_submodule()
@@ -244,6 +247,21 @@ def main():
     transcripts_dir = setup_transcripts_directory()
     
     logging.info("Initialization complete")
+    
+    # Demonstrate the downloader adapter functionality
+    logging.info("Testing downloader adapter...")
+    try:
+        cameras = downloader_adapter.list_cameras(
+            address=config['address'],
+            username=config['username'],
+            password=config['password'],
+        )
+        logging.info(f"Successfully listed {len(cameras)} camera(s) from UniFi Protect")
+        for camera in cameras:
+            logging.info(f"  - {camera['name']} (ID: {camera['id']})")
+    except Exception as e:
+        logging.warning(f"Could not list cameras (this is OK if UniFi Protect is not accessible): {e}")
+    
     logging.info("ubv_transcribe is ready to use")
     
     return 0
