@@ -18,6 +18,7 @@ import atexit
 import shutil
 import subprocess
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -251,6 +252,14 @@ def run_whisper(
         
         # The output file will be <output_base>.txt
         output_txt = f"{output_base}.txt"
+        
+        # Wait briefly for file to be written and retry if needed
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            if os.path.exists(output_txt):
+                break
+            if attempt < max_attempts - 1:
+                time.sleep(0.1)  # Wait 100ms between attempts
         
         if not os.path.exists(output_txt):
             raise RuntimeError(
