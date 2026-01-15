@@ -105,7 +105,7 @@ def load_processed_chunks(transcript_path: Path) -> Set[str]:
                 # Look for chunk metadata markers: <!-- CHUNK: identifier -->
                 if line.strip().startswith('<!-- CHUNK:') and line.strip().endswith('-->'):
                     # Extract identifier from: <!-- CHUNK: identifier -->
-                    chunk_id = line.strip()[11:-4].strip()
+                    chunk_id = line.strip().removeprefix('<!-- CHUNK:').removesuffix('-->').strip()
                     processed.add(chunk_id)
     except Exception as e:
         logging.warning(f"Error loading processed chunks from {transcript_path}: {e}")

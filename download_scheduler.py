@@ -85,12 +85,13 @@ def download_with_retry(
 ) -> Optional[str]:
     """
     Download a video chunk with retry logic and exponential backoff, then transcode to WAV,
-    transcribe with Whisper, and merge into daily transcript.
+    transcribe with Whisper, and optionally merge into daily transcript.
     
     Handles transient failures including rate limiting (429-style errors)
     without crashing the entire download process. After successful download,
     transcodes the video to audio-only WAV format (16kHz, mono, pcm_s16le),
-    transcribes it with Whisper, and merges the transcript into a daily markdown file.
+    transcribes it with Whisper, and optionally merges the transcript into a 
+    daily markdown file if transcripts_dir is provided.
     
     Args:
         camera_id: ID of the camera to download from
@@ -107,12 +108,15 @@ def download_with_retry(
         max_retries: Maximum number of retry attempts (default: 5)
         initial_backoff: Initial backoff delay in seconds (default: 1.0)
         max_backoff: Maximum backoff delay in seconds (default: 300.0)
-        transcripts_dir: Directory for merged transcripts (optional)
+        transcripts_dir: Directory for merged transcripts (optional). If not provided,
+                        transcripts will not be merged into daily files.
         whisper_bin: Path to whisper-cli binary (optional)
         model_path: Path to whisper model (optional)
         
     Returns:
-        Path to the transcript text file, or None if download/transcode/transcribe failed after all retries
+        Path to the transcript text file on success, or None if download/transcode/transcribe 
+        failed after all retries. Note that merging failures are logged but do not cause 
+        the function to return None - the transcript file path is still returned.
     """
     backoff = initial_backoff
     
