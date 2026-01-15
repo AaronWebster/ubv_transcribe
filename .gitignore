@@ -8,6 +8,10 @@ transcripts/
 # Videos directory - created by download scheduler but not tracked
 videos/
 
+# Temporary WAV files - created during transcoding but not tracked
+*.wav
+/tmp/ubv_transcribe_wav/
+
 # Python artifacts
 __pycache__/
 *.py[cod]

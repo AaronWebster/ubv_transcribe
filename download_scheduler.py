@@ -4,6 +4,7 @@ Download scheduler module for UniFi Protect footage.
 
 This module provides functionality to download full days in 1-hour chunks
 with a single concurrent download stream and robust retry/backoff logic.
+It also transcodes downloaded video chunks to audio-only WAV format.
 """
 
 import logging
@@ -13,6 +14,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
 import downloader_adapter
+import transcoder
 
 
 # Keywords used to detect rate limiting errors
@@ -78,10 +80,11 @@ def download_with_retry(
     max_backoff: float = 300.0,
 ) -> Optional[str]:
     """
-    Download a video chunk with retry logic and exponential backoff.
+    Download a video chunk with retry logic and exponential backoff, then transcode to WAV.
     
     Handles transient failures including rate limiting (429-style errors)
-    without crashing the entire download process.
+    without crashing the entire download process. After successful download,
+    transcodes the video to audio-only WAV format (16kHz, mono, pcm_s16le).
     
     Args:
         camera_id: ID of the camera to download from
@@ -100,7 +103,7 @@ def download_with_retry(
         max_backoff: Maximum backoff delay in seconds (default: 300.0)
         
     Returns:
-        Path to the downloaded video file, or None if download failed after all retries
+        Path to the transcoded WAV file, or None if download/transcode failed after all retries
     """
     backoff = initial_backoff
     
@@ -126,7 +129,16 @@ def download_with_retry(
             )
             
             logging.info(f"Successfully downloaded chunk to: {file_path}")
-            return file_path
+            
+            # Transcode the video to WAV format
+            try:
+                wav_path = transcoder.transcode_to_wav(file_path)
+                logging.info(f"Successfully transcoded to WAV: {wav_path}")
+                return wav_path
+            except Exception as transcode_error:
+                logging.error(f"Failed to transcode video to WAV: {transcode_error}")
+                # Consider transcoding failure as a chunk failure
+                raise transcode_error
             
         except Exception as e:
             error_msg = str(e).lower()
