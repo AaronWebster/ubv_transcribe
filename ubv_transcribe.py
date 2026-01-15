@@ -13,8 +13,9 @@ import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Import the downloader adapter
+# Import the downloader adapter and footage discovery
 import downloader_adapter
+import footage_discovery
 
 
 def setup_logging(log_level=logging.INFO):
@@ -221,6 +222,18 @@ For more information, visit:
         version='%(prog)s 0.1.0'
     )
     
+    parser.add_argument(
+        '--timezone',
+        metavar='TZ',
+        help='Timezone for footage discovery (default: US/Pacific). Examples: US/Pacific, US/Eastern, UTC'
+    )
+    
+    parser.add_argument(
+        '--discover-footage',
+        action='store_true',
+        help='Discover available footage date range across all cameras'
+    )
+    
     return parser.parse_args()
 
 
@@ -248,19 +261,66 @@ def main():
     
     logging.info("Initialization complete")
     
-    # Demonstrate the downloader adapter functionality
-    logging.info("Testing downloader adapter...")
-    try:
-        cameras = downloader_adapter.list_cameras(
-            address=config['address'],
-            username=config['username'],
-            password=config['password'],
-        )
-        logging.info(f"Successfully listed {len(cameras)} camera(s) from UniFi Protect")
-        for camera in cameras:
-            logging.info(f"  - {camera['name']} (ID: {camera['id']})")
-    except Exception as e:
-        logging.warning(f"Could not list cameras (this is OK if UniFi Protect is not accessible): {e}")
+    # Discover footage if requested
+    if args.discover_footage:
+        logging.info("=" * 60)
+        logging.info("FOOTAGE DISCOVERY")
+        logging.info("=" * 60)
+        try:
+            discovery_result = footage_discovery.discover_footage_range(
+                address=config['address'],
+                username=config['username'],
+                password=config['password'],
+                timezone_str=args.timezone,
+            )
+            
+            logging.info("=" * 60)
+            logging.info("DISCOVERY RESULTS")
+            logging.info("=" * 60)
+            logging.info(f"Timezone: {discovery_result['timezone']}")
+            logging.info(f"Total cameras: {len(discovery_result['cameras'])}")
+            
+            if discovery_result['earliest_date']:
+                logging.info(f"Earliest footage: {discovery_result['earliest_date'].date()}")
+                logging.info(f"Latest footage: {discovery_result['latest_date'].date()}")
+                logging.info(f"Total days with footage: {discovery_result['days_with_footage']}")
+                
+                logging.info("")
+                logging.info("Per-camera footage ranges:")
+                for camera_id, range_info in discovery_result['per_camera_ranges'].items():
+                    if range_info['earliest_date']:
+                        logging.info(
+                            f"  {range_info['camera_name']}: "
+                            f"{range_info['earliest_date'].date()} to "
+                            f"{range_info['latest_date'].date()}"
+                        )
+                    else:
+                        logging.info(f"  {range_info['camera_name']}: No footage")
+            else:
+                logging.info("No footage found for any camera")
+            
+            logging.info("=" * 60)
+            
+        except Exception as e:
+            logging.error(f"Error during footage discovery: {e}")
+            if args.verbose:
+                import traceback
+                logging.error(traceback.format_exc())
+            return 1
+    else:
+        # Demonstrate the downloader adapter functionality
+        logging.info("Testing downloader adapter...")
+        try:
+            cameras = downloader_adapter.list_cameras(
+                address=config['address'],
+                username=config['username'],
+                password=config['password'],
+            )
+            logging.info(f"Successfully listed {len(cameras)} camera(s) from UniFi Protect")
+            for camera in cameras:
+                logging.info(f"  - {camera['name']} (ID: {camera['id']})")
+        except Exception as e:
+            logging.warning(f"Could not list cameras (this is OK if UniFi Protect is not accessible): {e}")
     
     logging.info("ubv_transcribe is ready to use")
     
