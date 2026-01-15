@@ -212,5 +212,240 @@ class TestCleanupTempFiles(unittest.TestCase):
         self.assertFalse(temp_dir.exists())
 
 
+class TestRunWhisper(unittest.TestCase):
+    """Test whisper transcription functionality."""
+    
+    def setUp(self):
+        """Setup test environment."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_wav_path = os.path.join(self.temp_dir, 'test_audio.wav')
+        self.output_base = os.path.join(self.temp_dir, 'output')
+        self.expected_output = f"{self.output_base}.txt"
+        
+        # Create a dummy WAV file for testing
+        with open(self.test_wav_path, 'w') as f:
+            f.write('dummy wav content')
+    
+    def tearDown(self):
+        """Cleanup test files."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+    
+    def test_missing_wav_file(self):
+        """Test error handling when input WAV doesn't exist."""
+        nonexistent_wav = '/nonexistent/audio.wav'
+        
+        # Create fake binary and model files that exist
+        fake_bin = os.path.join(self.temp_dir, 'whisper-cli')
+        fake_model = os.path.join(self.temp_dir, 'model.bin')
+        with open(fake_bin, 'w') as f:
+            f.write('fake binary')
+        with open(fake_model, 'w') as f:
+            f.write('fake model')
+        
+        with self.assertRaises(FileNotFoundError) as context:
+            transcoder.run_whisper(
+                nonexistent_wav,
+                self.output_base,
+                whisper_bin=fake_bin,
+                model_path=fake_model,
+            )
+        
+        self.assertIn('Input WAV file not found', str(context.exception))
+    
+    def test_missing_whisper_binary(self):
+        """Test error handling when whisper-cli binary doesn't exist."""
+        fake_bin = '/nonexistent/whisper-cli'
+        
+        with self.assertRaises(FileNotFoundError) as context:
+            transcoder.run_whisper(
+                self.test_wav_path,
+                self.output_base,
+                whisper_bin=fake_bin,
+            )
+        
+        self.assertIn('whisper-cli binary not found', str(context.exception))
+    
+    def test_missing_model_file(self):
+        """Test error handling when model file doesn't exist."""
+        # Create a fake binary file that exists
+        fake_bin = os.path.join(self.temp_dir, 'whisper-cli')
+        with open(fake_bin, 'w') as f:
+            f.write('fake binary')
+        
+        fake_model = '/nonexistent/model.bin'
+        
+        with self.assertRaises(FileNotFoundError) as context:
+            transcoder.run_whisper(
+                self.test_wav_path,
+                self.output_base,
+                whisper_bin=fake_bin,
+                model_path=fake_model,
+            )
+        
+        self.assertIn('Whisper model not found', str(context.exception))
+    
+    @patch('transcoder.subprocess.run')
+    @patch('transcoder.os.path.exists')
+    def test_successful_transcription(self, mock_exists, mock_run):
+        """Test successful whisper transcription."""
+        # Setup mocks for file existence checks
+        def exists_side_effect(path):
+            # Return True for binary, model, wav, and output txt
+            return True
+        
+        mock_exists.side_effect = exists_side_effect
+        
+        # Mock successful subprocess run
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = 'Transcription complete'
+        mock_result.stderr = ''
+        mock_run.return_value = mock_result
+        
+        # Call run_whisper
+        result = transcoder.run_whisper(
+            self.test_wav_path,
+            self.output_base,
+            whisper_bin='/fake/bin/whisper-cli',
+            model_path='/fake/models/model.bin',
+        )
+        
+        # Verify result
+        self.assertEqual(result, self.expected_output)
+        
+        # Verify subprocess.run was called
+        mock_run.assert_called_once()
+        
+        # Verify the command arguments
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[0], '/fake/bin/whisper-cli')
+        self.assertIn('--model', cmd)
+        self.assertIn('/fake/models/model.bin', cmd)
+        self.assertIn('--language', cmd)
+        self.assertIn('en', cmd)
+        self.assertIn('--threads', cmd)
+        self.assertIn('6', cmd)
+        self.assertIn('--processors', cmd)
+        self.assertIn('1', cmd)
+        self.assertIn('--max-context', cmd)
+        self.assertIn('0', cmd)
+        self.assertIn('--beam-size', cmd)
+        self.assertIn('1', cmd)
+        self.assertIn('--best-of', cmd)
+        self.assertIn('1', cmd)
+        self.assertIn('--temperature', cmd)
+        self.assertIn('0.0', cmd)
+        self.assertIn('--output-txt', cmd)
+        self.assertIn('--output-file', cmd)
+        self.assertIn(self.output_base, cmd)
+        self.assertIn('--file', cmd)
+        self.assertIn(self.test_wav_path, cmd)
+    
+    @patch('transcoder.subprocess.run')
+    @patch('transcoder.os.path.exists')
+    def test_command_structure(self, mock_exists, mock_run):
+        """Test that the command is built with exact arguments from the issue."""
+        # Setup mocks
+        mock_exists.return_value = True
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ''
+        mock_result.stderr = ''
+        mock_run.return_value = mock_result
+        
+        # Call run_whisper
+        transcoder.run_whisper(
+            self.test_wav_path,
+            self.output_base,
+            whisper_bin='/fake/bin/whisper-cli',
+            model_path='/fake/models/model.bin',
+        )
+        
+        # Get the command that was executed
+        cmd = mock_run.call_args[0][0]
+        
+        # Verify exact command structure
+        expected_structure = [
+            '/fake/bin/whisper-cli',
+            '--model', '/fake/models/model.bin',
+            '--language', 'en',
+            '--threads', '6',
+            '--processors', '1',
+            '--max-context', '0',
+            '--beam-size', '1',
+            '--best-of', '1',
+            '--temperature', '0.0',
+            '--output-txt',
+            '--output-file', self.output_base,
+            '--file', self.test_wav_path,
+        ]
+        
+        self.assertEqual(cmd, expected_structure)
+    
+    @patch('transcoder.subprocess.run')
+    @patch('transcoder.os.path.exists')
+    def test_subprocess_error_handling(self, mock_exists, mock_run):
+        """Test error handling when whisper-cli subprocess fails."""
+        # Setup mocks for file existence
+        def exists_side_effect(path):
+            # Return True for binary, model, and wav, but False for output
+            if path.endswith('.txt'):
+                return False
+            return True
+        
+        mock_exists.side_effect = exists_side_effect
+        
+        # Mock subprocess failure
+        import subprocess
+        mock_run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=['whisper-cli'],
+            output='stdout output',
+            stderr='error details',
+        )
+        
+        # Verify that RuntimeError is raised
+        with self.assertRaises(RuntimeError) as context:
+            transcoder.run_whisper(
+                self.test_wav_path,
+                self.output_base,
+                whisper_bin='/fake/bin/whisper-cli',
+                model_path='/fake/models/model.bin',
+            )
+        
+        self.assertIn('Whisper transcription failed', str(context.exception))
+    
+    @patch('transcoder.subprocess.run')
+    @patch('transcoder.os.path.exists')
+    def test_default_paths(self, mock_exists, mock_run):
+        """Test that default paths are used when not specified."""
+        # Setup mocks
+        mock_exists.return_value = True
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ''
+        mock_result.stderr = ''
+        mock_run.return_value = mock_result
+        
+        # Call without specifying binary or model paths
+        transcoder.run_whisper(self.test_wav_path, self.output_base)
+        
+        # Verify subprocess.run was called
+        mock_run.assert_called_once()
+        
+        # Get the command
+        cmd = mock_run.call_args[0][0]
+        
+        # Verify default paths are used (expanded from ~)
+        home = os.path.expanduser('~')
+        expected_bin = os.path.join(home, 'whisper.cpp/build/bin/whisper-cli')
+        expected_model = os.path.join(home, 'whisper.cpp/models/ggml-large-v3.bin')
+        
+        self.assertEqual(cmd[0], expected_bin)
+        self.assertIn(expected_model, cmd)
+
+
 if __name__ == '__main__':
     unittest.main()
