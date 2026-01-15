@@ -55,13 +55,20 @@ def check_submodule():
 
 def get_temp_directory():
     """
-    Get a predictable temp working directory for the application.
+    Get a secure temp working directory for the application.
+    Uses a predictable location within the user's temp directory with
+    appropriate permissions.
     
     Returns:
         Path: Path object pointing to the temp directory
     """
-    temp_dir = Path(tempfile.gettempdir()) / 'ubv_transcribe'
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    # Use a subdirectory in the system temp to keep it predictable but secure
+    # The parent temp directory already has appropriate permissions
+    base_temp = Path(tempfile.gettempdir())
+    temp_dir = base_temp / 'ubv_transcribe'
+    
+    # Create with restricted permissions (owner only)
+    temp_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     logging.info(f"Temp working directory: {temp_dir}")
     return temp_dir
 
