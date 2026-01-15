@@ -12,6 +12,7 @@ provides a cleaner API for our use case.
 
 import logging
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -59,6 +60,25 @@ def _validate_submodule() -> Path:
     return submodule_path
 
 
+def _ensure_submodule_in_path() -> Path:
+    """
+    Validate submodule and ensure it's in sys.path for imports.
+    
+    Returns:
+        Path: Path to the submodule directory
+        
+    Raises:
+        SystemExit: If the submodule is not initialized
+    """
+    submodule_path = _validate_submodule()
+    
+    # Add submodule to Python path if not already there
+    if str(submodule_path) not in sys.path:
+        sys.path.insert(0, str(submodule_path))
+    
+    return submodule_path
+
+
 def _get_protect_client(
     address: str,
     username: str,
@@ -84,12 +104,8 @@ def _get_protect_client(
     Raises:
         ImportError: If the submodule is not properly initialized
     """
-    # Validate submodule before attempting import
-    submodule_path = _validate_submodule()
-    
-    # Add submodule to Python path if not already there
-    if str(submodule_path) not in sys.path:
-        sys.path.insert(0, str(submodule_path))
+    # Validate submodule and ensure it's in sys.path
+    _ensure_submodule_in_path()
     
     try:
         from protect_archiver.client import ProtectClient
@@ -141,7 +157,6 @@ def list_cameras(
         ...     print(f"{camera['name']} (ID: {camera['id']})")
     """
     # Create a temporary destination path (not used for listing cameras)
-    import tempfile
     temp_path = tempfile.gettempdir()
     
     client = _get_protect_client(
@@ -244,16 +259,14 @@ def download_chunk(
     logging.info(f"Downloading video from camera '{camera.name}' ({camera_id})")
     logging.info(f"Time range: {start_dt} to {end_dt}")
     
-    # Import the download_footage function
-    submodule_path = _validate_submodule()
-    if str(submodule_path) not in sys.path:
-        sys.path.insert(0, str(submodule_path))
+    # Ensure submodule is in path and import required modules
+    _ensure_submodule_in_path()
     
     from protect_archiver.downloader import Downloader
+    from protect_archiver.utils import make_camera_name_fs_safe
     
     # Download the footage
-    # Note: download_footage doesn't return a path, but it creates the file
-    # The file naming is handled internally by the downloader
+    # The downloader handles file creation and naming internally
     Downloader.download_footage(
         client=client,
         start=start_dt,
@@ -263,13 +276,19 @@ def download_chunk(
     
     # Construct the expected file path based on the downloader's naming convention
     # The downloader creates files with format: "CameraName - YYYY-MM-DD - HH.MM.SS+ZZZZ.mp4"
-    from protect_archiver.utils import make_camera_name_fs_safe
     camera_name_fs_safe = make_camera_name_fs_safe(camera)
     
     # The file will be in the destination_path with the camera name and timestamp
     filename_timestamp = start_dt.strftime("%Y-%m-%d - %H.%M.%S%z")
     expected_filename = f"{camera_name_fs_safe} - {filename_timestamp}.mp4"
     expected_path = out_dir / expected_filename
+    
+    # Verify the file was actually created
+    if not expected_path.exists():
+        raise FileNotFoundError(
+            f"Expected video file was not created: {expected_path}. "
+            "The download may have failed."
+        )
     
     logging.info(f"Video downloaded to: {expected_path}")
     return str(expected_path)
