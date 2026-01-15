@@ -351,7 +351,8 @@ def download_footage_sequential(
             )
             
             # Count skipped chunks as successful (work already done)
-            # Count None as failure, anything else (transcript path or "skipped") as success
+            # Result can be: None (failure), CHUNK_SKIPPED (skipped), or transcript path (success)
+            # All non-None values indicate the chunk is complete (either already processed or just processed)
             if result is not None:
                 successful_chunks += 1
             else:
