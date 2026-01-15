@@ -5,13 +5,15 @@ UniFi Protect camera audio transcription app
 
 ### Download Scheduler
 
-The download scheduler downloads footage in 1-hour chunks with a single concurrent stream and robust retry/backoff logic.
+The download scheduler downloads footage in 1-hour chunks with a single concurrent stream and robust retry/backoff logic. It automatically transcodes videos to WAV format, transcribes them with Whisper, and merges transcripts into daily Markdown files.
 
 - **Sequential processing**: Single download worker processes chunks one at a time (no parallel downloads)
 - **Hourly chunks**: Each day is partitioned into 1-hour intervals
 - **Retry/backoff**: Handles transient failures including rate limiting (429 errors) without crashing
 - **Flexible selection**: Download from all cameras or specific camera IDs
 - **Timezone aware**: Uses consistent local time (default: US/Pacific)
+- **Automatic transcription**: Transcodes video to WAV and transcribes with Whisper (if configured)
+- **Daily transcript merging**: Combines hourly transcripts into per-day Markdown files with deduplication
 
 #### Usage
 
@@ -40,6 +42,9 @@ python3 ubv_transcribe.py --download \
 
 The download scheduler will:
 - Create hourly video chunks for each camera
+- Transcode videos to WAV format (16kHz, mono, pcm_s16le)
+- Transcribe audio with Whisper (if configured)
+- Merge transcripts into daily Markdown files at `transcripts/YYYY/YYYY-MM-DD_CAMERANAME.md`
 - Log progress for each chunk
 - Automatically retry failed downloads with exponential backoff
 - Provide a summary of successful and failed downloads
@@ -61,6 +66,44 @@ Successful downloads: 48
 Failed downloads: 0
 Success rate: 100.0%
 ==============================================================
+```
+
+#### Transcript Output Format
+
+Transcripts are automatically merged into daily Markdown files:
+
+- **Location**: `transcripts/YYYY/YYYY-MM-DD_CAMERANAME.md`
+- **Structure**: 
+  - Header with date and camera name
+  - Hourly sections with timestamps (HH:MM:SS - HH:MM:SS)
+  - Transcript text for each hour
+  - Hidden chunk markers for deduplication tracking
+- **Deduplication**: Each time segment is only transcribed once, even if the download is run multiple times
+
+Example transcript file (`transcripts/2024/2024-01-15_Front Door.md`):
+
+```markdown
+# 2024-01-15 - Front Door
+
+Transcript for camera **Front Door** on 2024-01-15.
+
+---
+
+<!-- CHUNK: Front Door_2024-01-15_14:00:00 -->
+
+## 14:00:00 - 15:00:00
+
+[Transcript text for this hour]
+
+---
+
+<!-- CHUNK: Front Door_2024-01-15_15:00:00 -->
+
+## 15:00:00 - 16:00:00
+
+[Transcript text for this hour]
+
+---
 ```
 
 ### Footage Discovery

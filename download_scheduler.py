@@ -15,6 +15,7 @@ from pathlib import Path
 
 import downloader_adapter
 import transcoder
+import transcript_merger
 
 
 # Keywords used to detect rate limiting errors
@@ -78,13 +79,19 @@ def download_with_retry(
     max_retries: int = 5,
     initial_backoff: float = 1.0,
     max_backoff: float = 300.0,
+    transcripts_dir: Optional[Path] = None,
+    whisper_bin: Optional[str] = None,
+    model_path: Optional[str] = None,
 ) -> Optional[str]:
     """
-    Download a video chunk with retry logic and exponential backoff, then transcode to WAV.
+    Download a video chunk with retry logic and exponential backoff, then transcode to WAV,
+    transcribe with Whisper, and optionally merge into daily transcript.
     
     Handles transient failures including rate limiting (429-style errors)
     without crashing the entire download process. After successful download,
-    transcodes the video to audio-only WAV format (16kHz, mono, pcm_s16le).
+    transcodes the video to audio-only WAV format (16kHz, mono, pcm_s16le),
+    transcribes it with Whisper, and optionally merges the transcript into a 
+    daily markdown file if transcripts_dir is provided.
     
     Args:
         camera_id: ID of the camera to download from
@@ -101,9 +108,15 @@ def download_with_retry(
         max_retries: Maximum number of retry attempts (default: 5)
         initial_backoff: Initial backoff delay in seconds (default: 1.0)
         max_backoff: Maximum backoff delay in seconds (default: 300.0)
+        transcripts_dir: Directory for merged transcripts (optional). If not provided,
+                        transcripts will not be merged into daily files.
+        whisper_bin: Path to whisper-cli binary (optional)
+        model_path: Path to whisper model (optional)
         
     Returns:
-        Path to the transcoded WAV file, or None if download/transcode failed after all retries
+        Path to the transcript text file on success, or None if download/transcode/transcribe 
+        failed after all retries. Note that merging failures are logged but do not cause 
+        the function to return None - the transcript file path is still returned.
     """
     backoff = initial_backoff
     
@@ -134,11 +147,48 @@ def download_with_retry(
             try:
                 wav_path = transcoder.transcode_to_wav(file_path)
                 logging.info(f"Successfully transcoded to WAV: {wav_path}")
-                return wav_path
             except Exception as transcode_error:
                 logging.error(f"Failed to transcode video to WAV: {transcode_error}")
                 # Consider transcoding failure as a chunk failure
                 raise transcode_error
+            
+            # Transcribe the WAV file with Whisper
+            try:
+                # Generate output base path for whisper (without extension)
+                wav_file = Path(wav_path)
+                output_base = str(wav_file.parent / wav_file.stem)
+                
+                transcript_path = transcoder.run_whisper(
+                    wav_path=wav_path,
+                    output_base=output_base,
+                    whisper_bin=whisper_bin,
+                    model_path=model_path,
+                )
+                logging.info(f"Successfully transcribed to: {transcript_path}")
+            except Exception as transcribe_error:
+                logging.error(f"Failed to transcribe WAV file: {transcribe_error}")
+                # Consider transcription failure as a chunk failure
+                raise transcribe_error
+            
+            # Merge transcript into daily markdown file if transcripts_dir is provided
+            if transcripts_dir:
+                try:
+                    merged = transcript_merger.merge_transcript_chunk(
+                        transcripts_dir=transcripts_dir,
+                        camera_name=camera_name,
+                        start_dt=start_dt,
+                        end_dt=end_dt,
+                        transcript_file=transcript_path,
+                    )
+                    if merged:
+                        logging.info(f"Successfully merged transcript into daily file")
+                    else:
+                        logging.info(f"Transcript already merged (skipped duplicate)")
+                except Exception as merge_error:
+                    logging.error(f"Failed to merge transcript: {merge_error}")
+                    # Log error but don't fail the chunk - we have the transcript file
+            
+            return transcript_path
             
         except Exception as e:
             error_msg = str(e).lower()
@@ -192,12 +242,17 @@ def download_footage_sequential(
     max_retries: int = 5,
     initial_backoff: float = 1.0,
     max_backoff: float = 300.0,
+    transcripts_dir: Optional[Path] = None,
+    whisper_bin: Optional[str] = None,
+    model_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Download footage for multiple cameras sequentially in hourly chunks.
     
     This is the main "download worker" that processes chunks one at a time
     with no parallel downloads. Each day is partitioned into hourly intervals.
+    After downloading and transcoding, optionally transcribes with Whisper and
+    merges transcripts into daily markdown files.
     
     Args:
         cameras: List of camera dictionaries with 'id' and 'name' keys
@@ -213,6 +268,9 @@ def download_footage_sequential(
         max_retries: Maximum number of retry attempts per chunk
         initial_backoff: Initial backoff delay in seconds
         max_backoff: Maximum backoff delay in seconds
+        transcripts_dir: Directory for merged transcripts (optional)
+        whisper_bin: Path to whisper-cli binary (optional)
+        model_path: Path to whisper model (optional)
         
     Returns:
         Dictionary with download statistics:
@@ -271,6 +329,9 @@ def download_footage_sequential(
                 max_retries=max_retries,
                 initial_backoff=initial_backoff,
                 max_backoff=max_backoff,
+                transcripts_dir=transcripts_dir,
+                whisper_bin=whisper_bin,
+                model_path=model_path,
             )
             
             if result:
