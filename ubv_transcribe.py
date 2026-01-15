@@ -57,8 +57,12 @@ def check_submodule():
         _show_submodule_error("Submodule 'unifi-protect-video-downloader' path is not a directory.")
     
     # Check if submodule is empty (not initialized)
-    if not any(submodule_path.iterdir()):
-        _show_submodule_error("Submodule 'unifi-protect-video-downloader' is not initialized.")
+    try:
+        if not any(submodule_path.iterdir()):
+            _show_submodule_error("Submodule 'unifi-protect-video-downloader' is not initialized.")
+    except (PermissionError, OSError) as e:
+        logging.error(f"Unable to access submodule directory: {e}")
+        _show_submodule_error("Submodule 'unifi-protect-video-downloader' directory is not accessible.")
     
     logging.info(f"Submodule found at: {submodule_path}")
 
