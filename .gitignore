@@ -1,3 +1,7 @@
+# Environment files
+.env
+.env.local
+
 # Transcripts directory - created by the app but not tracked
 transcripts/
 
