@@ -16,6 +16,8 @@ import logging
 import tempfile
 import atexit
 import shutil
+import subprocess
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -152,3 +154,118 @@ def cleanup_temp_files():
     Note: This function is automatically called on program exit via atexit.
     """
     _cleanup_temp_wav_dir()
+
+
+def run_whisper(
+    wav_path: str,
+    output_base: str,
+    whisper_bin: Optional[str] = None,
+    model_path: Optional[str] = None,
+) -> str:
+    """
+    Run whisper.cpp (whisper-cli) for transcription.
+    
+    Shells out to whisper-cli with the exact argument pattern for transcription.
+    
+    Args:
+        wav_path: Path to the input WAV file
+        output_base: Base path for output files (without extension)
+        whisper_bin: Optional path to whisper-cli binary.
+                    Default: ~/whisper.cpp/build/bin/whisper-cli
+        model_path: Optional path to whisper model.
+                   Default: ~/whisper.cpp/models/ggml-large-v3.bin
+    
+    Returns:
+        Path to the generated transcript text file
+        
+    Raises:
+        FileNotFoundError: If the whisper-cli binary or model file doesn't exist
+        RuntimeError: If whisper-cli execution fails
+        
+    Example:
+        >>> txt_path = run_whisper("/path/to/audio.wav", "/path/to/output_base")
+        >>> print(f"Transcript created: {txt_path}")
+    """
+    # Expand paths and set defaults
+    if whisper_bin is None:
+        whisper_bin = os.path.expanduser('~/whisper.cpp/build/bin/whisper-cli')
+    else:
+        whisper_bin = os.path.expanduser(whisper_bin)
+    
+    if model_path is None:
+        model_path = os.path.expanduser('~/whisper.cpp/models/ggml-large-v3.bin')
+    else:
+        model_path = os.path.expanduser(model_path)
+    
+    # Validate that whisper binary exists
+    if not os.path.exists(whisper_bin):
+        raise FileNotFoundError(
+            f"whisper-cli binary not found: {whisper_bin}\n"
+            f"Please install whisper.cpp and build the binary."
+        )
+    
+    # Validate that model file exists
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Whisper model not found: {model_path}\n"
+            f"Please download the model file."
+        )
+    
+    # Validate input WAV file
+    if not os.path.exists(wav_path):
+        raise FileNotFoundError(f"Input WAV file not found: {wav_path}")
+    
+    logging.info(f"Running whisper transcription on: {wav_path}")
+    logging.debug(f"Whisper binary: {whisper_bin}")
+    logging.debug(f"Model: {model_path}")
+    logging.debug(f"Output base: {output_base}")
+    
+    # Build the command with exact arguments from the issue
+    cmd = [
+        whisper_bin,
+        '--model', model_path,
+        '--language', 'en',
+        '--threads', '6',
+        '--processors', '1',
+        '--max-context', '0',
+        '--beam-size', '1',
+        '--best-of', '1',
+        '--temperature', '0.0',
+        '--output-txt',
+        '--output-file', output_base,
+        '--file', wav_path,
+    ]
+    
+    try:
+        # Run whisper-cli
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        
+        logging.debug(f"Whisper stdout: {result.stdout}")
+        if result.stderr:
+            logging.debug(f"Whisper stderr: {result.stderr}")
+        
+        # The output file will be <output_base>.txt
+        output_txt = f"{output_base}.txt"
+        
+        if not os.path.exists(output_txt):
+            raise RuntimeError(
+                f"Whisper completed but output file not found: {output_txt}"
+            )
+        
+        logging.info(f"Successfully transcribed to: {output_txt}")
+        return output_txt
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = (
+            f"Whisper transcription failed for {wav_path}\n"
+            f"Return code: {e.returncode}\n"
+            f"Stdout: {e.stdout}\n"
+            f"Stderr: {e.stderr}"
+        )
+        logging.error(error_msg)
+        raise RuntimeError(error_msg) from e
