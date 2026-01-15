@@ -234,7 +234,7 @@ def main():
     logging.info("Starting ubv_transcribe")
     
     # Load UniFi Protect credentials
-    config = load_env_config(args.env_file)
+    load_env_config(args.env_file)
     
     # Check that the submodule is initialized
     check_submodule()
