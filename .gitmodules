@@ -1,0 +1,3 @@
+[submodule "unifi-protect-video-downloader"]
+	path = unifi-protect-video-downloader
+	url = https://github.com/danielfernau/unifi-protect-video-downloader
