@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from dotenv import load_dotenv
 
 
 def setup_logging(log_level=logging.INFO):
@@ -25,6 +26,69 @@ def setup_logging(log_level=logging.INFO):
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+
+
+def load_env_config(env_file=None):
+    """
+    Load UniFi Protect credentials from .env file.
+    
+    Args:
+        env_file: Optional path to custom .env file. If None, looks for .env in script directory.
+    
+    Returns:
+        dict: Dictionary with username, password, and address keys
+        
+    Raises:
+        SystemExit: If required environment variables are missing
+    """
+    # Determine which .env file to load
+    if env_file:
+        env_path = Path(env_file)
+        if not env_path.exists():
+            logging.error(f"Specified .env file not found: {env_file}")
+            sys.exit(1)
+        load_dotenv(env_path)
+        logging.info(f"Loaded environment from: {env_file}")
+    else:
+        # Try to load from .env in script directory
+        script_dir = Path(__file__).parent.absolute()
+        default_env = script_dir / '.env'
+        if default_env.exists():
+            load_dotenv(default_env)
+            logging.info(f"Loaded environment from: {default_env}")
+        else:
+            logging.info("No .env file found, using environment variables")
+    
+    # Required environment variables
+    required_vars = [
+        'UNIFI_PROTECT_USERNAME',
+        'UNIFI_PROTECT_PASSWORD',
+        'UNIFI_PROTECT_ADDRESS'
+    ]
+    
+    # Check for missing variables
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing_vars:
+        logging.error("Missing required environment variables:")
+        for var in missing_vars:
+            logging.error(f"  - {var}")
+        logging.error("")
+        logging.error("Please set these variables in a .env file or as environment variables.")
+        logging.error("See .env.example for a template.")
+        sys.exit(1)
+    
+    # Log successful validation (without exposing secrets)
+    logging.info("UniFi Protect credentials loaded successfully")
+    logging.debug(f"UniFi Protect address: {os.getenv('UNIFI_PROTECT_ADDRESS')}")
+    logging.debug(f"UniFi Protect username: {os.getenv('UNIFI_PROTECT_USERNAME')}")
+    # Never log password, even in debug mode
+    
+    return {
+        'username': os.getenv('UNIFI_PROTECT_USERNAME'),
+        'password': os.getenv('UNIFI_PROTECT_PASSWORD'),
+        'address': os.getenv('UNIFI_PROTECT_ADDRESS')
+    }
 
 
 def _show_submodule_error(message):
@@ -116,6 +180,20 @@ def parse_arguments():
 Examples:
   %(prog)s --help
   %(prog)s --verbose
+  %(prog)s --env-file /path/to/.env
+
+Configuration:
+  UniFi Protect credentials can be provided via:
+  - A .env file in the script directory (default)
+  - A custom .env file specified with --env-file
+  - Environment variables
+
+  Required variables:
+  - UNIFI_PROTECT_USERNAME
+  - UNIFI_PROTECT_PASSWORD
+  - UNIFI_PROTECT_ADDRESS
+
+  See .env.example for a template.
 
 For more information, visit:
   https://github.com/AaronWebster/ubv_transcribe
@@ -126,6 +204,12 @@ For more information, visit:
         '-v', '--verbose',
         action='store_true',
         help='Enable verbose (DEBUG) logging'
+    )
+    
+    parser.add_argument(
+        '--env-file',
+        metavar='PATH',
+        help='Path to .env file (default: .env in script directory)'
     )
     
     parser.add_argument(
@@ -148,6 +232,9 @@ def main():
     setup_logging(log_level)
     
     logging.info("Starting ubv_transcribe")
+    
+    # Load UniFi Protect credentials
+    load_env_config(args.env_file)
     
     # Check that the submodule is initialized
     check_submodule()
