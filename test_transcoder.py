@@ -84,42 +84,49 @@ class TestTranscodeToWav(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             transcoder.transcode_to_wav('/nonexistent/video.mp4')
     
-    @patch('transcoder.ffmpeg')
-    def test_successful_transcode(self, mock_ffmpeg):
+    @patch('transcoder.ffmpeg.run')
+    @patch('transcoder.ffmpeg.output')
+    @patch('transcoder.ffmpeg.input')
+    def test_successful_transcode(self, mock_input, mock_output, mock_run):
         """Test successful transcoding with correct parameters."""
-        # Setup mock
-        mock_stream = MagicMock()
-        mock_ffmpeg.input.return_value = mock_stream
-        mock_ffmpeg.output.return_value = mock_stream
-        mock_stream.run = MagicMock()
+        # Setup mock chain
+        mock_stream_in = MagicMock()
+        mock_stream_out = MagicMock()
+        mock_input.return_value = mock_stream_in
+        mock_output.return_value = mock_stream_out
         
         # Call transcode
         output_path = os.path.join(self.temp_dir, 'output.wav')
         result = transcoder.transcode_to_wav(self.test_video_path, output_path)
         
         # Verify ffmpeg was called with correct parameters
-        mock_ffmpeg.input.assert_called_once_with(self.test_video_path)
-        mock_ffmpeg.output.assert_called_once()
+        mock_input.assert_called_once_with(self.test_video_path)
+        mock_output.assert_called_once()
         
         # Check that output was called with correct audio parameters
-        output_call = mock_ffmpeg.output.call_args
+        output_call = mock_output.call_args
         self.assertEqual(output_call[0][1], output_path)
         self.assertEqual(output_call[1]['acodec'], 'pcm_s16le')
         self.assertEqual(output_call[1]['ar'], 16000)
         self.assertEqual(output_call[1]['ac'], 1)
         self.assertEqual(output_call[1]['format'], 'wav')
         
+        # Verify run was called
+        mock_run.assert_called_once()
+        
         # Verify result
         self.assertEqual(result, output_path)
     
-    @patch('transcoder.ffmpeg')
-    def test_automatic_output_path(self, mock_ffmpeg):
+    @patch('transcoder.ffmpeg.run')
+    @patch('transcoder.ffmpeg.output')
+    @patch('transcoder.ffmpeg.input')
+    def test_automatic_output_path(self, mock_input, mock_output, mock_run):
         """Test that output path is automatically generated when not provided."""
-        # Setup mock
-        mock_stream = MagicMock()
-        mock_ffmpeg.input.return_value = mock_stream
-        mock_ffmpeg.output.return_value = mock_stream
-        mock_stream.run = MagicMock()
+        # Setup mock chain
+        mock_stream_in = MagicMock()
+        mock_stream_out = MagicMock()
+        mock_input.return_value = mock_stream_in
+        mock_output.return_value = mock_stream_out
         
         # Call transcode without output path
         result = transcoder.transcode_to_wav(self.test_video_path)
@@ -129,22 +136,23 @@ class TestTranscodeToWav(unittest.TestCase):
         self.assertIn('test_video', result)
         self.assertIn('ubv_transcribe_wav', result)
     
-    @patch('transcoder.ffmpeg')
-    def test_ffmpeg_error_handling(self, mock_ffmpeg):
+    @patch('transcoder.ffmpeg.run')
+    @patch('transcoder.ffmpeg.output')
+    @patch('transcoder.ffmpeg.input')
+    def test_ffmpeg_error_handling(self, mock_input, mock_output, mock_run):
         """Test error handling when ffmpeg fails."""
         # Setup mock to raise an error
-        mock_input = MagicMock()
-        mock_output = MagicMock()
-        mock_ffmpeg.input.return_value = mock_input
-        mock_ffmpeg.output.return_value = mock_output
+        mock_stream_in = MagicMock()
+        mock_stream_out = MagicMock()
+        mock_input.return_value = mock_stream_in
+        mock_output.return_value = mock_stream_out
         
-        # Create a mock ffmpeg.Error
-        class FFmpegError(Exception):
-            def __init__(self):
-                self.stderr = b"Error details"
+        # Import the real ffmpeg module to use its Error class
+        import ffmpeg
         
-        mock_ffmpeg.Error = FFmpegError
-        mock_ffmpeg.run.side_effect = FFmpegError()
+        # Create an ffmpeg.Error instance with stderr
+        error = ffmpeg.Error('ffmpeg', b'stdout', b'Error details')
+        mock_run.side_effect = error
         
         # Verify that RuntimeError is raised
         with self.assertRaises(RuntimeError) as context:
@@ -152,14 +160,16 @@ class TestTranscodeToWav(unittest.TestCase):
         
         self.assertIn('FFmpeg transcoding failed', str(context.exception))
     
-    @patch('transcoder.ffmpeg')
-    def test_overwrite_output(self, mock_ffmpeg):
+    @patch('transcoder.ffmpeg.run')
+    @patch('transcoder.ffmpeg.output')
+    @patch('transcoder.ffmpeg.input')
+    def test_overwrite_output(self, mock_input, mock_output, mock_run):
         """Test that existing output files are overwritten."""
-        # Setup mock
-        mock_input = MagicMock()
-        mock_output = MagicMock()
-        mock_ffmpeg.input.return_value = mock_input
-        mock_ffmpeg.output.return_value = mock_output
+        # Setup mock chain
+        mock_stream_in = MagicMock()
+        mock_stream_out = MagicMock()
+        mock_input.return_value = mock_stream_in
+        mock_output.return_value = mock_stream_out
         
         # Create existing output file
         output_path = os.path.join(self.temp_dir, 'existing.wav')
@@ -170,8 +180,8 @@ class TestTranscodeToWav(unittest.TestCase):
         transcoder.transcode_to_wav(self.test_video_path, output_path)
         
         # Verify run was called with overwrite_output=True
-        mock_ffmpeg.run.assert_called_once()
-        call_kwargs = mock_ffmpeg.run.call_args[1]
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args[1]
         self.assertTrue(call_kwargs.get('overwrite_output'))
 
 
