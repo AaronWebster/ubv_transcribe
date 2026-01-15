@@ -346,7 +346,9 @@ def download_footage_sequential(
                 model_path=model_path,
             )
             
-            if result:
+            # Count skipped chunks as successful (work already done)
+            # Count None as failure, anything else (transcript path or "skipped") as success
+            if result is not None:
                 successful_chunks += 1
             else:
                 failed_chunks += 1
