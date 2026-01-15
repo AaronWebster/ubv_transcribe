@@ -15,6 +15,10 @@ from pathlib import Path
 import downloader_adapter
 
 
+# Keywords used to detect rate limiting errors
+RATE_LIMIT_KEYWORDS = ['429', 'too many requests', 'rate limit', 'throttle']
+
+
 def generate_hourly_chunks(
     start_date: datetime,
     end_date: datetime,
@@ -128,7 +132,7 @@ def download_with_retry(
             error_msg = str(e).lower()
             is_rate_limit = any(
                 keyword in error_msg
-                for keyword in ['429', 'too many requests', 'rate limit', 'throttle']
+                for keyword in RATE_LIMIT_KEYWORDS
             )
             
             if attempt < max_retries:
@@ -269,7 +273,10 @@ def download_footage_sequential(
     logging.info(f"Total chunks attempted: {total_chunks}")
     logging.info(f"Successful downloads: {successful_chunks}")
     logging.info(f"Failed downloads: {failed_chunks}")
-    logging.info(f"Success rate: {100 * successful_chunks / total_chunks:.1f}%")
+    if total_chunks > 0:
+        logging.info(f"Success rate: {100 * successful_chunks / total_chunks:.1f}%")
+    else:
+        logging.info("Success rate: N/A (no chunks to download)")
     logging.info("=" * 60)
     
     return {

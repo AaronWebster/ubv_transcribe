@@ -354,6 +354,34 @@ class TestDownloadFootageSequential(unittest.TestCase):
         self.assertEqual(result['successful_chunks'], 2)
         self.assertEqual(result['failed_chunks'], 2)
         self.assertEqual(mock_download.call_count, 4)
+    
+    @patch('download_scheduler.download_with_retry')
+    def test_zero_chunks(self, mock_download):
+        """Test handling of zero chunks (e.g., invalid date range)."""
+        mock_download.return_value = "/path/to/video.mp4"
+        
+        cameras = [{'id': 'cam1', 'name': 'Test Camera'}]
+        tz = pytz.timezone('US/Pacific')
+        # Start and end at same time = no chunks
+        start = tz.localize(datetime(2024, 1, 1, 0, 0, 0))
+        end = tz.localize(datetime(2024, 1, 1, 0, 0, 0))
+        
+        result = download_scheduler.download_footage_sequential(
+            cameras=cameras,
+            start_date=start,
+            end_date=end,
+            out_path='/tmp/videos',
+            address='https://test.local',
+            username='test',
+            password='test',
+        )
+        
+        # Should handle zero chunks gracefully
+        self.assertEqual(result['total_chunks'], 0)
+        self.assertEqual(result['successful_chunks'], 0)
+        self.assertEqual(result['failed_chunks'], 0)
+        # No downloads should be attempted
+        mock_download.assert_not_called()
 
 
 if __name__ == '__main__':
