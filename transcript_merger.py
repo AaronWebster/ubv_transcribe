@@ -172,6 +172,11 @@ def append_transcript_chunk(
     Uses atomic write strategy (write to temp file then rename) to prevent
     corruption if the process is interrupted.
     
+    Note: This implementation copies the entire file on each append, which has
+    O(n) behavior per append. For daily transcript files with ~24 hourly chunks,
+    this is acceptable (total work is O(n²) but n is small). The benefit is
+    guaranteed atomicity without complex locking or partial write recovery.
+    
     Args:
         transcript_path: Path to the daily transcript markdown file
         chunk_id: Unique identifier for the chunk
@@ -205,6 +210,8 @@ def append_transcript_chunk(
     try:
         # Create temporary file in the same directory as the target file
         # This ensures the temp file is on the same filesystem for atomic rename
+        # The temporary file inherits directory permissions and is only accessible
+        # by the creating process due to mkstemp's default mode of 0600
         temp_fd, temp_path = tempfile.mkstemp(
             dir=transcript_path.parent,
             prefix='.tmp_transcript_',
@@ -213,6 +220,8 @@ def append_transcript_chunk(
         )
         
         # If the file already exists, copy its contents to the temp file first
+        # This enables atomic append: old content + new content written to temp,
+        # then atomically moved to replace the original file
         if file_exists:
             with open(transcript_path, 'r', encoding='utf-8') as src:
                 with os.fdopen(temp_fd, 'w', encoding='utf-8') as dst:

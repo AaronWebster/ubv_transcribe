@@ -7,6 +7,7 @@ Markdown files with deduplication and timestamp tracking.
 """
 
 import unittest
+import unittest.mock
 import tempfile
 import os
 import shutil
@@ -703,7 +704,6 @@ class TestAtomicWrites(unittest.TestCase):
         # Force an error during write by making the parent directory read-only
         # This test is platform-specific, so we'll simulate differently
         # Instead, we'll patch os.replace to raise an error
-        import unittest.mock
         with unittest.mock.patch('os.replace', side_effect=OSError("Simulated error")):
             with self.assertRaises(OSError):
                 transcript_merger.append_transcript_chunk(
