@@ -438,8 +438,8 @@ class TestIdempotentBehavior(unittest.TestCase):
             transcripts_dir=temp_dir,
         )
         
-        # Should return "skipped" sentinel value
-        self.assertEqual(result, "skipped")
+        # Should return CHUNK_SKIPPED sentinel value
+        self.assertEqual(result, download_scheduler.CHUNK_SKIPPED)
         
         # Verify that is_chunk_already_processed was called
         self.assertEqual(mock_is_processed.call_count, 1)
