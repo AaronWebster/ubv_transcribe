@@ -410,5 +410,155 @@ class TestMergeTranscriptChunk(unittest.TestCase):
         self.assertLess(second_pos, third_pos)
 
 
+class TestIsChunkAlreadyProcessed(unittest.TestCase):
+    """Test checking if a chunk has already been processed."""
+    
+    def setUp(self):
+        """Setup test environment."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.transcripts_dir = Path(self.temp_dir) / "transcripts"
+        self.transcripts_dir.mkdir()
+        self.tz = pytz.timezone('US/Pacific')
+    
+    def tearDown(self):
+        """Cleanup test files."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+    
+    def test_chunk_not_processed_no_file(self):
+        """Test that chunk is not processed when transcript file doesn't exist."""
+        start_dt = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        
+        result = transcript_merger.is_chunk_already_processed(
+            transcripts_dir=self.transcripts_dir,
+            camera_name="Front Door",
+            start_dt=start_dt,
+        )
+        
+        self.assertFalse(result)
+    
+    def test_chunk_not_processed_empty_file(self):
+        """Test that chunk is not processed when transcript file is empty."""
+        start_dt = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        
+        # Create empty transcript file
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            start_dt,
+        )
+        daily_path.touch()
+        
+        result = transcript_merger.is_chunk_already_processed(
+            transcripts_dir=self.transcripts_dir,
+            camera_name="Front Door",
+            start_dt=start_dt,
+        )
+        
+        self.assertFalse(result)
+    
+    def test_chunk_is_processed(self):
+        """Test that chunk is detected when it exists in transcript."""
+        start_dt = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        end_dt = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        
+        # Create transcript with the chunk
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            start_dt,
+        )
+        
+        chunk_id = transcript_merger.get_chunk_identifier("Front Door", start_dt)
+        transcript_merger.append_transcript_chunk(
+            transcript_path=daily_path,
+            chunk_id=chunk_id,
+            camera_name="Front Door",
+            start_dt=start_dt,
+            end_dt=end_dt,
+            transcript_text="Test transcript",
+        )
+        
+        result = transcript_merger.is_chunk_already_processed(
+            transcripts_dir=self.transcripts_dir,
+            camera_name="Front Door",
+            start_dt=start_dt,
+        )
+        
+        self.assertTrue(result)
+    
+    def test_different_chunk_not_processed(self):
+        """Test that a different chunk is not detected as processed."""
+        start_dt1 = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        end_dt1 = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        start_dt2 = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        
+        # Create transcript with first chunk only
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            start_dt1,
+        )
+        
+        chunk_id1 = transcript_merger.get_chunk_identifier("Front Door", start_dt1)
+        transcript_merger.append_transcript_chunk(
+            transcript_path=daily_path,
+            chunk_id=chunk_id1,
+            camera_name="Front Door",
+            start_dt=start_dt1,
+            end_dt=end_dt1,
+            transcript_text="Test transcript",
+        )
+        
+        # Check if second chunk is processed (should be False)
+        result = transcript_merger.is_chunk_already_processed(
+            transcripts_dir=self.transcripts_dir,
+            camera_name="Front Door",
+            start_dt=start_dt2,
+        )
+        
+        self.assertFalse(result)
+    
+    def test_multiple_chunks_selective_detection(self):
+        """Test that only specific chunks are detected as processed."""
+        chunks = [
+            (14, 15, True),   # This chunk will be added
+            (15, 16, False),  # This chunk will NOT be added
+            (16, 17, True),   # This chunk will be added
+        ]
+        
+        for start_hour, end_hour, should_add in chunks:
+            start_dt = self.tz.localize(datetime(2024, 1, 15, start_hour, 0, 0))
+            end_dt = self.tz.localize(datetime(2024, 1, 15, end_hour, 0, 0))
+            
+            if should_add:
+                daily_path = transcript_merger.get_daily_transcript_path(
+                    self.transcripts_dir,
+                    "Front Door",
+                    start_dt,
+                )
+                chunk_id = transcript_merger.get_chunk_identifier("Front Door", start_dt)
+                transcript_merger.append_transcript_chunk(
+                    transcript_path=daily_path,
+                    chunk_id=chunk_id,
+                    camera_name="Front Door",
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    transcript_text=f"Chunk {start_hour}:00",
+                )
+        
+        # Verify detection
+        for start_hour, end_hour, expected_processed in chunks:
+            start_dt = self.tz.localize(datetime(2024, 1, 15, start_hour, 0, 0))
+            result = transcript_merger.is_chunk_already_processed(
+                transcripts_dir=self.transcripts_dir,
+                camera_name="Front Door",
+                start_dt=start_dt,
+            )
+            self.assertEqual(result, expected_processed, 
+                           f"Chunk at {start_hour}:00 should be {'processed' if expected_processed else 'not processed'}")
+
+
 if __name__ == '__main__':
     unittest.main()

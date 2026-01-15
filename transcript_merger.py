@@ -114,6 +114,46 @@ def load_processed_chunks(transcript_path: Path) -> Set[str]:
     return processed
 
 
+def is_chunk_already_processed(
+    transcripts_dir: Path,
+    camera_name: str,
+    start_dt: datetime,
+) -> bool:
+    """
+    Check if a chunk has already been processed and is in the daily transcript.
+    
+    This enables idempotent operation by checking the markdown state before
+    downloading/transcoding/transcribing a chunk.
+    
+    Args:
+        transcripts_dir: Base transcripts directory
+        camera_name: Name of the camera
+        start_dt: Start datetime of the chunk
+        
+    Returns:
+        True if the chunk is already in the daily transcript, False otherwise
+        
+    Example:
+        >>> from pathlib import Path
+        >>> from datetime import datetime
+        >>> import pytz
+        >>> tz = pytz.timezone('US/Pacific')
+        >>> dt = tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        >>> is_chunk_already_processed(Path("/transcripts"), "Front Door", dt)
+        False
+    """
+    # Generate chunk identifier
+    chunk_id = get_chunk_identifier(camera_name, start_dt)
+    
+    # Get the daily transcript path
+    transcript_path = get_daily_transcript_path(transcripts_dir, camera_name, start_dt)
+    
+    # Load processed chunks
+    processed_chunks = load_processed_chunks(transcript_path)
+    
+    return chunk_id in processed_chunks
+
+
 def append_transcript_chunk(
     transcript_path: Path,
     chunk_id: str,

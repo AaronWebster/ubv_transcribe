@@ -21,6 +21,9 @@ import transcript_merger
 # Keywords used to detect rate limiting errors
 RATE_LIMIT_KEYWORDS = ['429', 'too many requests', 'rate limit', 'throttle']
 
+# Sentinel value to indicate a chunk was skipped due to idempotency
+CHUNK_SKIPPED = "skipped"
+
 
 def generate_hourly_chunks(
     start_date: datetime,
@@ -114,10 +117,23 @@ def download_with_retry(
         model_path: Path to whisper model (optional)
         
     Returns:
-        Path to the transcript text file on success, or None if download/transcode/transcribe 
+        Path to the transcript text file on success, CHUNK_SKIPPED sentinel value if the 
+        chunk was already processed (idempotency), or None if download/transcode/transcribe 
         failed after all retries. Note that merging failures are logged but do not cause 
         the function to return None - the transcript file path is still returned.
     """
+    # Check if chunk is already processed (idempotency check)
+    if transcripts_dir and transcript_merger.is_chunk_already_processed(
+        transcripts_dir=transcripts_dir,
+        camera_name=camera_name,
+        start_dt=start_dt,
+    ):
+        logging.info(
+            f"Skipping already-processed chunk for {camera_name} "
+            f"({start_dt.strftime('%Y-%m-%d %H:%M')} to {end_dt.strftime('%H:%M')})"
+        )
+        return CHUNK_SKIPPED  # Return sentinel value to indicate skip
+    
     backoff = initial_backoff
     
     for attempt in range(max_retries + 1):
@@ -334,7 +350,10 @@ def download_footage_sequential(
                 model_path=model_path,
             )
             
-            if result:
+            # Count skipped chunks as successful (work already done)
+            # Result can be: None (failure), CHUNK_SKIPPED (skipped), or transcript path (success)
+            # All non-None values indicate the chunk is complete (either already processed or just processed)
+            if result is not None:
                 successful_chunks += 1
             else:
                 failed_chunks += 1
