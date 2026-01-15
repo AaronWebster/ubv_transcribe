@@ -100,7 +100,7 @@ def check_footage_exists(
         # Check if the recording started before or during the check date
         # check_date is at the start of the day, so we check if recording_start
         # is before the end of that day
-        check_date_end = check_date + timedelta(days=1)
+        next_day_start = check_date + timedelta(days=1)
         
         # Convert recording_start to the same timezone as check_date for comparison
         if recording_start.tzinfo is None:
@@ -110,7 +110,7 @@ def check_footage_exists(
         # Convert to check_date's timezone for comparison
         recording_start_local = recording_start.astimezone(check_date.tzinfo)
         
-        has_footage = recording_start_local < check_date_end
+        has_footage = recording_start_local < next_day_start
         
         if has_footage:
             logging.debug(

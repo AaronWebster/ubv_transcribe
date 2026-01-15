@@ -65,7 +65,7 @@ class TestCheckFootageExists(unittest.TestCase):
     def test_footage_exists(self, mock_list_cameras):
         """Test camera with footage on the check date."""
         # Recording started 10 days ago
-        recording_start = datetime.utcnow() - timedelta(days=10)
+        recording_start = datetime.now(pytz.UTC) - timedelta(days=10)
         
         mock_list_cameras.return_value = [{
             'id': 'camera1',
@@ -95,7 +95,7 @@ class TestCheckFootageExists(unittest.TestCase):
     def test_footage_does_not_exist(self, mock_list_cameras):
         """Test camera without footage on the check date."""
         # Recording started 5 days ago
-        recording_start = datetime.utcnow() - timedelta(days=5)
+        recording_start = datetime.now(pytz.UTC) - timedelta(days=5)
         
         mock_list_cameras.return_value = [{
             'id': 'camera1',
@@ -149,7 +149,7 @@ class TestDiscoverFootageRange(unittest.TestCase):
         mock_list_cameras.return_value = [{
             'id': 'camera1',
             'name': 'Test Camera',
-            'recording_start': datetime.utcnow() - timedelta(days=3),
+            'recording_start': datetime.now(pytz.UTC) - timedelta(days=3),
         }]
         
         # Simulate footage existing for 3 days, then none
