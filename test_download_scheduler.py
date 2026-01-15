@@ -7,7 +7,7 @@ Tests the download scheduling functionality without requiring actual UniFi Prote
 
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch
 import pytz
 
 import download_scheduler

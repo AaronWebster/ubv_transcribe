@@ -13,7 +13,6 @@ import tempfile
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
-import pytz
 
 # Import the downloader adapter, footage discovery, and download scheduler
 import downloader_adapter
