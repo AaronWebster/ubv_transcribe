@@ -1,5 +1,5 @@
 # ubv_transcribe
-Unifi Protect camera audio transcription app
+UniFi Protect camera audio transcription app
 
 ## Submodules
 
