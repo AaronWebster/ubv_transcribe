@@ -11,6 +11,8 @@ This module provides functionality to:
 
 import logging
 import os
+import tempfile
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Set
@@ -163,10 +165,12 @@ def append_transcript_chunk(
     transcript_text: str,
 ) -> None:
     """
-    Append a transcript chunk to a daily markdown file.
+    Append a transcript chunk to a daily markdown file using atomic writes.
     
     Creates the file with a header if it doesn't exist, otherwise appends.
     Includes chunk metadata (timestamps) for auditability.
+    Uses atomic write strategy (write to temp file then rename) to prevent
+    corruption if the process is interrupted.
     
     Args:
         transcript_path: Path to the daily transcript markdown file
@@ -188,32 +192,73 @@ def append_transcript_chunk(
         ...     "This is the transcript text"
         ... )
     """
-    # Check if file exists to determine if we need to write a header
-    file_exists = transcript_path.exists()
-    
     # Ensure parent directory exists
     transcript_path.parent.mkdir(parents=True, exist_ok=True)
     
-    with open(transcript_path, 'a', encoding='utf-8') as f:
-        # Write header if this is a new file
-        if not file_exists:
-            date_str = start_dt.strftime('%Y-%m-%d')
-            f.write(f"# {date_str} - {camera_name}\n\n")
-            f.write(f"Transcript for camera **{camera_name}** on {date_str}.\n\n")
+    # Check if file exists to determine if we need to write a header
+    file_exists = transcript_path.exists()
+    
+    # Create temporary file in the same directory as the target file
+    # This ensures the temp file is on the same filesystem for atomic rename
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=transcript_path.parent,
+        prefix='.tmp_transcript_',
+        suffix='.md',
+        text=True
+    )
+    
+    try:
+        # If the file already exists, copy its contents to the temp file first
+        if file_exists:
+            with open(transcript_path, 'r', encoding='utf-8') as src:
+                with os.fdopen(temp_fd, 'w', encoding='utf-8') as dst:
+                    shutil.copyfileobj(src, dst)
+                    # temp_fd is now closed, open temp_path for appending
+                    temp_fd = None
+        else:
+            # Close the file descriptor since we'll open the file normally
+            os.close(temp_fd)
+            temp_fd = None
+        
+        # Append new chunk content to the temp file
+        with open(temp_path, 'a', encoding='utf-8') as f:
+            # Write header if this is a new file
+            if not file_exists:
+                date_str = start_dt.strftime('%Y-%m-%d')
+                f.write(f"# {date_str} - {camera_name}\n\n")
+                f.write(f"Transcript for camera **{camera_name}** on {date_str}.\n\n")
+                f.write("---\n\n")
+            
+            # Write chunk metadata (hidden HTML comment for tracking)
+            f.write(f"<!-- CHUNK: {chunk_id} -->\n\n")
+            
+            # Write chunk header with timestamps
+            start_time_str = start_dt.strftime('%H:%M:%S')
+            end_time_str = end_dt.strftime('%H:%M:%S')
+            f.write(f"## {start_time_str} - {end_time_str}\n\n")
+            
+            # Write the transcript text
+            f.write(transcript_text.strip())
+            f.write("\n\n")
             f.write("---\n\n")
         
-        # Write chunk metadata (hidden HTML comment for tracking)
-        f.write(f"<!-- CHUNK: {chunk_id} -->\n\n")
+        # Atomic rename - this is the key to preventing corruption
+        # On Unix, os.replace() is atomic and will overwrite the destination
+        os.replace(temp_path, transcript_path)
         
-        # Write chunk header with timestamps
-        start_time_str = start_dt.strftime('%H:%M:%S')
-        end_time_str = end_dt.strftime('%H:%M:%S')
-        f.write(f"## {start_time_str} - {end_time_str}\n\n")
-        
-        # Write the transcript text
-        f.write(transcript_text.strip())
-        f.write("\n\n")
-        f.write("---\n\n")
+    except Exception as e:
+        # Clean up temp file if something went wrong
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except Exception:
+                pass
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        raise e
 
 
 def merge_transcript_chunk(

@@ -560,5 +560,172 @@ class TestIsChunkAlreadyProcessed(unittest.TestCase):
                            f"Chunk at {start_hour}:00 should be {'processed' if expected_processed else 'not processed'}")
 
 
+class TestAtomicWrites(unittest.TestCase):
+    """Test atomic write behavior for transcript chunks."""
+    
+    def setUp(self):
+        """Setup test environment."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.transcripts_dir = Path(self.temp_dir) / "transcripts"
+        self.transcripts_dir.mkdir()
+        self.tz = pytz.timezone('US/Pacific')
+    
+    def tearDown(self):
+        """Cleanup test files."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+    
+    def test_atomic_write_creates_no_temp_files_on_success(self):
+        """Test that no temporary files are left after successful write."""
+        start_dt = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        end_dt = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            start_dt,
+        )
+        
+        chunk_id = transcript_merger.get_chunk_identifier("Front Door", start_dt)
+        transcript_merger.append_transcript_chunk(
+            transcript_path=daily_path,
+            chunk_id=chunk_id,
+            camera_name="Front Door",
+            start_dt=start_dt,
+            end_dt=end_dt,
+            transcript_text="Test transcript",
+        )
+        
+        # Check that the final file exists
+        self.assertTrue(daily_path.exists())
+        
+        # Check that no temporary files are left in the directory
+        temp_files = list(daily_path.parent.glob('.tmp_transcript_*'))
+        self.assertEqual(len(temp_files), 0, 
+                        f"Found {len(temp_files)} temporary files: {temp_files}")
+    
+    def test_atomic_write_preserves_existing_content(self):
+        """Test that atomic write preserves existing file content when appending."""
+        start_dt1 = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        end_dt1 = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        start_dt2 = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        end_dt2 = self.tz.localize(datetime(2024, 1, 15, 16, 0, 0))
+        
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            start_dt1,
+        )
+        
+        # Write first chunk
+        chunk_id1 = transcript_merger.get_chunk_identifier("Front Door", start_dt1)
+        transcript_merger.append_transcript_chunk(
+            transcript_path=daily_path,
+            chunk_id=chunk_id1,
+            camera_name="Front Door",
+            start_dt=start_dt1,
+            end_dt=end_dt1,
+            transcript_text="First chunk content",
+        )
+        
+        # Read content after first write
+        with open(daily_path, 'r', encoding='utf-8') as f:
+            content_after_first = f.read()
+        
+        # Write second chunk
+        chunk_id2 = transcript_merger.get_chunk_identifier("Front Door", start_dt2)
+        transcript_merger.append_transcript_chunk(
+            transcript_path=daily_path,
+            chunk_id=chunk_id2,
+            camera_name="Front Door",
+            start_dt=start_dt2,
+            end_dt=end_dt2,
+            transcript_text="Second chunk content",
+        )
+        
+        # Read content after second write
+        with open(daily_path, 'r', encoding='utf-8') as f:
+            content_after_second = f.read()
+        
+        # Verify first chunk content is preserved
+        self.assertIn("First chunk content", content_after_second)
+        self.assertIn("Second chunk content", content_after_second)
+        
+        # Verify both chunk markers are present
+        self.assertIn(chunk_id1, content_after_second)
+        self.assertIn(chunk_id2, content_after_second)
+    
+    def test_atomic_write_multiple_appends(self):
+        """Test that multiple atomic appends work correctly."""
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            datetime(2024, 1, 15),
+        )
+        
+        # Append multiple chunks
+        for hour in range(14, 18):
+            start_dt = self.tz.localize(datetime(2024, 1, 15, hour, 0, 0))
+            end_dt = self.tz.localize(datetime(2024, 1, 15, hour + 1, 0, 0))
+            chunk_id = transcript_merger.get_chunk_identifier("Front Door", start_dt)
+            
+            transcript_merger.append_transcript_chunk(
+                transcript_path=daily_path,
+                chunk_id=chunk_id,
+                camera_name="Front Door",
+                start_dt=start_dt,
+                end_dt=end_dt,
+                transcript_text=f"Chunk for hour {hour}",
+            )
+        
+        # Verify all chunks are present
+        with open(daily_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        for hour in range(14, 18):
+            self.assertIn(f"Chunk for hour {hour}", content)
+            chunk_id = f"Front Door_2024-01-15_{hour:02d}:00:00"
+            self.assertIn(chunk_id, content)
+        
+        # Verify no temp files remain
+        temp_files = list(daily_path.parent.glob('.tmp_transcript_*'))
+        self.assertEqual(len(temp_files), 0)
+    
+    def test_atomic_write_error_cleanup(self):
+        """Test that temporary files are cleaned up on error."""
+        start_dt = self.tz.localize(datetime(2024, 1, 15, 14, 0, 0))
+        end_dt = self.tz.localize(datetime(2024, 1, 15, 15, 0, 0))
+        
+        daily_path = transcript_merger.get_daily_transcript_path(
+            self.transcripts_dir,
+            "Front Door",
+            start_dt,
+        )
+        
+        chunk_id = transcript_merger.get_chunk_identifier("Front Door", start_dt)
+        
+        # Force an error during write by making the parent directory read-only
+        # This test is platform-specific, so we'll simulate differently
+        # Instead, we'll patch os.replace to raise an error
+        import unittest.mock
+        with unittest.mock.patch('os.replace', side_effect=OSError("Simulated error")):
+            with self.assertRaises(OSError):
+                transcript_merger.append_transcript_chunk(
+                    transcript_path=daily_path,
+                    chunk_id=chunk_id,
+                    camera_name="Front Door",
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    transcript_text="Test transcript",
+                )
+        
+        # Verify no temporary files are left after error
+        if daily_path.parent.exists():
+            temp_files = list(daily_path.parent.glob('.tmp_transcript_*'))
+            self.assertEqual(len(temp_files), 0,
+                           f"Temporary files not cleaned up: {temp_files}")
+
+
 if __name__ == '__main__':
     unittest.main()
