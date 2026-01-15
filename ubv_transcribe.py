@@ -417,6 +417,7 @@ def main():
                 address=config['address'],
                 username=config['username'],
                 password=config['password'],
+                transcripts_dir=transcripts_dir,
             )
             
             # Report results
