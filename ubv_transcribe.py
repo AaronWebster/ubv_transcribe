@@ -540,10 +540,10 @@ def _cleanup_transcripts_directory(transcripts_dir: Path) -> None:
     try:
         # Walk through transcripts directory and subdirectories
         for root, dirs, files in os.walk(transcripts_dir):
-            for file in files:
-                file_path = Path(root) / file
+            for filename in files:
+                file_path = Path(root) / filename
                 # Remove any non-markdown files
-                if not file.endswith('.md'):
+                if not filename.endswith('.md'):
                     try:
                         file_path.unlink()
                         logging.info(f"Cleaned up non-markdown file: {file_path}")

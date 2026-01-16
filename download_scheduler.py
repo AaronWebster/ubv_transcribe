@@ -243,7 +243,8 @@ def download_with_retry(
                     _cleanup_file(video_file_path)
                     _cleanup_file(wav_file_path)
                     _cleanup_file(transcript_file_path)
-                    # Log error but don't fail the chunk - we have the transcript file
+                    # Return transcript path even though merge failed (non-fatal error)
+                    # The transcript was created successfully, just not merged
                     return transcript_path
             
             # Cleanup intermediate files after successful processing
