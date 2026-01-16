@@ -12,6 +12,7 @@ import sys
 import tempfile
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 # Import the downloader adapter, footage discovery, and download scheduler
@@ -463,6 +464,7 @@ def main():
         
     finally:
         # Clean up temporary directories and leftover files (best effort)
+        _cleanup_transcripts_directory(transcripts_dir)
         _cleanup_temp_directories(temp_dir, output_dir)
 
 
@@ -474,6 +476,7 @@ def _cleanup_temp_directories(temp_dir: Path, output_dir: Optional[Path]) -> Non
     - Temporary working directory
     - WAV files directory
     - Empty videos output directory
+    - Non-markdown files in transcripts directory
     
     Args:
         temp_dir: Temporary working directory
@@ -518,6 +521,36 @@ def _cleanup_temp_directories(temp_dir: Path, output_dir: Optional[Path]) -> Non
                     logging.info(f"Removed empty output directory: {output_dir}")
         except Exception as e:
             logging.warning(f"Failed to clean up output directory {output_dir}: {e}")
+
+
+def _cleanup_transcripts_directory(transcripts_dir: Path) -> None:
+    """
+    Clean up non-markdown files from the transcripts directory.
+    
+    This ensures that only .md files remain in the transcripts directory,
+    removing any temporary files or other artifacts that may have been
+    accidentally created there.
+    
+    Args:
+        transcripts_dir: Transcripts directory to clean
+    """
+    if not transcripts_dir or not transcripts_dir.exists():
+        return
+    
+    try:
+        # Walk through transcripts directory and subdirectories
+        for root, dirs, files in os.walk(transcripts_dir):
+            for file in files:
+                file_path = Path(root) / file
+                # Remove any non-markdown files
+                if not file.endswith('.md'):
+                    try:
+                        file_path.unlink()
+                        logging.info(f"Cleaned up non-markdown file: {file_path}")
+                    except Exception as e:
+                        logging.warning(f"Failed to clean up non-markdown file {file_path}: {e}")
+    except Exception as e:
+        logging.warning(f"Failed to clean up transcripts directory {transcripts_dir}: {e}")
 
 
 if __name__ == '__main__':

@@ -12,8 +12,13 @@ from pathlib import Path
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 import pytz
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import download_scheduler
+import ubv_transcribe
 
 
 class TestCleanupFile(unittest.TestCase):
@@ -55,6 +60,61 @@ class TestCleanupFile(unittest.TestCase):
         """Test that cleanup handles None path gracefully."""
         # Should not raise an exception
         download_scheduler._cleanup_file(None)
+
+
+class TestCleanupTranscriptsDirectory(unittest.TestCase):
+    """Test cleanup of non-markdown files from transcripts directory."""
+    
+    def setUp(self):
+        """Setup test environment."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.transcripts_dir = Path(self.temp_dir) / 'transcripts'
+        self.transcripts_dir.mkdir(parents=True, exist_ok=True)
+    
+    def tearDown(self):
+        """Cleanup test files."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+    
+    def test_removes_non_markdown_files(self):
+        """Test that non-markdown files are removed from transcripts directory."""
+        # Create various file types
+        (self.transcripts_dir / 'transcript.md').touch()
+        (self.transcripts_dir / 'audio.wav').touch()
+        (self.transcripts_dir / 'video.mp4').touch()
+        (self.transcripts_dir / 'temp.txt').touch()
+        
+        # Create subdirectory with files
+        year_dir = self.transcripts_dir / '2024'
+        year_dir.mkdir()
+        (year_dir / 'transcript.md').touch()
+        (year_dir / 'temp.wav').touch()
+        
+        # Run cleanup
+        ubv_transcribe._cleanup_transcripts_directory(self.transcripts_dir)
+        
+        # Verify only .md files remain
+        self.assertTrue((self.transcripts_dir / 'transcript.md').exists())
+        self.assertFalse((self.transcripts_dir / 'audio.wav').exists())
+        self.assertFalse((self.transcripts_dir / 'video.mp4').exists())
+        self.assertFalse((self.transcripts_dir / 'temp.txt').exists())
+        
+        # Verify subdirectory cleanup
+        self.assertTrue((year_dir / 'transcript.md').exists())
+        self.assertFalse((year_dir / 'temp.wav').exists())
+    
+    def test_handles_empty_directory(self):
+        """Test that cleanup handles empty directory gracefully."""
+        # Should not raise an exception
+        ubv_transcribe._cleanup_transcripts_directory(self.transcripts_dir)
+    
+    def test_handles_nonexistent_directory(self):
+        """Test that cleanup handles non-existent directory gracefully."""
+        nonexistent_dir = Path('/nonexistent/transcripts')
+        
+        # Should not raise an exception
+        ubv_transcribe._cleanup_transcripts_directory(nonexistent_dir)
 
 
 class TestDownloadWithRetryCleanup(unittest.TestCase):
