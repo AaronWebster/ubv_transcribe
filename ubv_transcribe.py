@@ -534,7 +534,7 @@ def _cleanup_transcripts_directory(transcripts_dir: Path) -> None:
     Args:
         transcripts_dir: Transcripts directory to clean
     """
-    if not transcripts_dir or not transcripts_dir.exists():
+    if transcripts_dir is None or not transcripts_dir.exists():
         return
     
     try:

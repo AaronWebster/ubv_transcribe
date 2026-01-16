@@ -141,10 +141,13 @@ def download_with_retry(
         model_path: Path to whisper model (optional)
         
     Returns:
-        Path to the transcript text file on success, CHUNK_SKIPPED sentinel value if the 
-        chunk was already processed (idempotency), or None if download/transcode/transcribe 
-        failed after all retries. Note that merging failures are logged but do not cause 
-        the function to return None - the transcript file path is still returned.
+        Path to where the transcript file was created (before cleanup) on success, 
+        CHUNK_SKIPPED sentinel value if the chunk was already processed (idempotency), 
+        or None if download/transcode/transcribe failed after all retries.
+        
+        Note: The returned path is for informational purposes only. The actual file 
+        has been cleaned up, and the transcript content has been merged into the daily 
+        markdown file in the transcripts directory.
     """
     # Check if chunk is already processed (idempotency check)
     if transcripts_dir and transcript_merger.is_chunk_already_processed(
