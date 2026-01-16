@@ -8,6 +8,7 @@ It also transcodes downloaded video chunks to audio-only WAV format.
 """
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
@@ -23,6 +24,26 @@ RATE_LIMIT_KEYWORDS = ['429', 'too many requests', 'rate limit', 'throttle']
 
 # Sentinel value to indicate a chunk was skipped due to idempotency
 CHUNK_SKIPPED = "skipped"
+
+
+def _cleanup_file(file_path: Optional[str]) -> None:
+    """
+    Clean up a file with best-effort deletion.
+    
+    Logs errors but does not raise exceptions, as cleanup is a best-effort operation.
+    
+    Args:
+        file_path: Path to the file to delete, or None to skip
+    """
+    if file_path is None:
+        return
+    
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logging.debug(f"Cleaned up file: {file_path}")
+    except Exception as e:
+        logging.warning(f"Failed to clean up file {file_path}: {e}")
 
 
 def generate_hourly_chunks(
@@ -96,6 +117,9 @@ def download_with_retry(
     transcribes it with Whisper, and optionally merges the transcript into a 
     daily markdown file if transcripts_dir is provided.
     
+    All intermediate files (video chunks, WAV files, transcript text files) are cleaned 
+    up after successful processing or on failure, ensuring only markdown files remain.
+    
     Args:
         camera_id: ID of the camera to download from
         camera_name: Name of the camera (for logging)
@@ -136,6 +160,11 @@ def download_with_retry(
     
     backoff = initial_backoff
     
+    # Track file paths for cleanup
+    video_file_path = None
+    wav_file_path = None
+    transcript_file_path = None
+    
     for attempt in range(max_retries + 1):
         try:
             logging.info(
@@ -156,15 +185,19 @@ def download_with_retry(
                 not_unifi_os=not_unifi_os,
                 skip_existing_files=skip_existing_files,
             )
+            video_file_path = file_path
             
             logging.info(f"Successfully downloaded chunk to: {file_path}")
             
             # Transcode the video to WAV format
             try:
                 wav_path = transcoder.transcode_to_wav(file_path)
+                wav_file_path = wav_path
                 logging.info(f"Successfully transcoded to WAV: {wav_path}")
             except Exception as transcode_error:
                 logging.error(f"Failed to transcode video to WAV: {transcode_error}")
+                # Clean up video file before re-raising
+                _cleanup_file(video_file_path)
                 # Consider transcoding failure as a chunk failure
                 raise transcode_error
             
@@ -180,9 +213,13 @@ def download_with_retry(
                     whisper_bin=whisper_bin,
                     model_path=model_path,
                 )
+                transcript_file_path = transcript_path
                 logging.info(f"Successfully transcribed to: {transcript_path}")
             except Exception as transcribe_error:
                 logging.error(f"Failed to transcribe WAV file: {transcribe_error}")
+                # Clean up video and wav files before re-raising
+                _cleanup_file(video_file_path)
+                _cleanup_file(wav_file_path)
                 # Consider transcription failure as a chunk failure
                 raise transcribe_error
             
@@ -202,7 +239,17 @@ def download_with_retry(
                         logging.info(f"Transcript already merged (skipped duplicate)")
                 except Exception as merge_error:
                     logging.error(f"Failed to merge transcript: {merge_error}")
+                    # Clean up intermediate files even if merge fails
+                    _cleanup_file(video_file_path)
+                    _cleanup_file(wav_file_path)
+                    _cleanup_file(transcript_file_path)
                     # Log error but don't fail the chunk - we have the transcript file
+                    return transcript_path
+            
+            # Cleanup intermediate files after successful processing
+            _cleanup_file(video_file_path)
+            _cleanup_file(wav_file_path)
+            _cleanup_file(transcript_file_path)
             
             return transcript_path
             
@@ -234,7 +281,11 @@ def download_with_retry(
                 time.sleep(wait_time)
                 backoff *= 2  # Exponential backoff
             else:
-                # Max retries reached
+                # Max retries reached - clean up any files that were created
+                _cleanup_file(video_file_path)
+                _cleanup_file(wav_file_path)
+                _cleanup_file(transcript_file_path)
+                
                 logging.error(
                     f"Failed to download chunk for {camera_name} "
                     f"({start_dt.strftime('%Y-%m-%d %H:%M')}) after {max_retries + 1} attempts: {e}"
