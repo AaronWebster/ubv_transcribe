@@ -12,6 +12,7 @@ import sys
 import tempfile
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 # Import the downloader adapter, footage discovery, and download scheduler
@@ -294,168 +295,262 @@ def main():
     
     logging.info("Initialization complete")
     
-    # Discover footage if requested
-    if args.discover_footage:
-        logging.info("=" * 60)
-        logging.info("FOOTAGE DISCOVERY")
-        logging.info("=" * 60)
-        try:
-            discovery_result = footage_discovery.discover_footage_range(
-                address=config['address'],
-                username=config['username'],
-                password=config['password'],
-                timezone_str=args.timezone,
-            )
-            
-            logging.info("=" * 60)
-            logging.info("DISCOVERY RESULTS")
-            logging.info("=" * 60)
-            logging.info(f"Timezone: {discovery_result['timezone']}")
-            logging.info(f"Total cameras: {len(discovery_result['cameras'])}")
-            
-            if discovery_result['earliest_date']:
-                logging.info(f"Earliest footage: {discovery_result['earliest_date'].date()}")
-                logging.info(f"Latest footage: {discovery_result['latest_date'].date()}")
-                logging.info(f"Total days with footage: {discovery_result['days_with_footage']}")
-                
-                logging.info("")
-                logging.info("Per-camera footage ranges:")
-                for camera_id, range_info in discovery_result['per_camera_ranges'].items():
-                    if range_info['earliest_date']:
-                        logging.info(
-                            f"  {range_info['camera_name']}: "
-                            f"{range_info['earliest_date'].date()} to "
-                            f"{range_info['latest_date'].date()}"
-                        )
-                    else:
-                        logging.info(f"  {range_info['camera_name']}: No footage")
-            else:
-                logging.info("No footage found for any camera")
-            
-            logging.info("=" * 60)
-            
-        except Exception as e:
-            logging.error(f"Error during footage discovery: {e}")
-            if args.verbose:
-                import traceback
-                logging.error(traceback.format_exc())
-            return 1
+    # Track output directory for cleanup
+    output_dir = None
     
-    # Download footage if requested
-    if args.download:
-        logging.info("=" * 60)
-        logging.info("DOWNLOAD SCHEDULER")
-        logging.info("=" * 60)
-        
-        # Validate required arguments
-        if not args.start_date or not args.end_date:
-            logging.error("--start-date and --end-date are required with --download")
-            logging.error("Example: --download --start-date 2024-01-01 --end-date 2024-01-02")
-            return 1
-        
-        try:
-            # Parse dates
-            tz = footage_discovery.get_timezone(args.timezone)
-            
+    try:
+        # Discover footage if requested
+        if args.discover_footage:
+            logging.info("=" * 60)
+            logging.info("FOOTAGE DISCOVERY")
+            logging.info("=" * 60)
             try:
-                start_date_naive = datetime.strptime(args.start_date, '%Y-%m-%d')
-                start_date = tz.localize(datetime.combine(start_date_naive.date(), time.min))
-            except ValueError:
-                logging.error(f"Invalid start date format: {args.start_date}. Expected YYYY-MM-DD")
-                return 1
-            
-            try:
-                end_date_naive = datetime.strptime(args.end_date, '%Y-%m-%d')
-                # End date should be at the end of the day (midnight of next day)
-                end_date = tz.localize(datetime.combine(end_date_naive.date(), time.min)) + timedelta(days=1)
-            except ValueError:
-                logging.error(f"Invalid end date format: {args.end_date}. Expected YYYY-MM-DD")
-                return 1
-            
-            # Get camera list
-            logging.info("Retrieving camera list...")
-            all_cameras = downloader_adapter.list_cameras(
-                address=config['address'],
-                username=config['username'],
-                password=config['password'],
-            )
-            
-            # Filter cameras if specific IDs were requested
-            if args.camera_ids:
-                cameras = [cam for cam in all_cameras if cam['id'] in args.camera_ids]
-                if len(cameras) < len(args.camera_ids):
-                    found_ids = {cam['id'] for cam in cameras}
-                    missing_ids = set(args.camera_ids) - found_ids
-                    logging.warning(f"Some camera IDs not found: {missing_ids}")
-            else:
-                cameras = all_cameras
-            
-            if not cameras:
-                logging.error("No cameras to download from")
-                return 1
-            
-            logging.info(f"Will download from {len(cameras)} camera(s):")
-            for camera in cameras:
-                logging.info(f"  - {camera['name']} (ID: {camera['id']})")
-            
-            # Determine output directory
-            if args.output_dir:
-                output_dir = Path(args.output_dir)
-            else:
-                script_dir = Path(__file__).parent.absolute()
-                output_dir = script_dir / 'videos'
-            
-            output_dir.mkdir(parents=True, exist_ok=True)
-            logging.info(f"Output directory: {output_dir}")
-            
-            # Run the download scheduler
-            result = download_scheduler.download_footage_sequential(
-                cameras=cameras,
-                start_date=start_date,
-                end_date=end_date,
-                out_path=str(output_dir),
-                address=config['address'],
-                username=config['username'],
-                password=config['password'],
-                transcripts_dir=transcripts_dir,
-            )
-            
-            # Report results
-            if result['failed_chunks'] > 0:
-                logging.warning(
-                    f"Download completed with {result['failed_chunks']} failed chunks. "
-                    "Check logs for details."
+                discovery_result = footage_discovery.discover_footage_range(
+                    address=config['address'],
+                    username=config['username'],
+                    password=config['password'],
+                    timezone_str=args.timezone,
                 )
-                return 1
-            else:
-                logging.info("All downloads completed successfully!")
-                return 0
                 
-        except Exception as e:
-            logging.error(f"Error during download: {e}")
-            if args.verbose:
-                import traceback
-                logging.error(traceback.format_exc())
-            return 1
+                logging.info("=" * 60)
+                logging.info("DISCOVERY RESULTS")
+                logging.info("=" * 60)
+                logging.info(f"Timezone: {discovery_result['timezone']}")
+                logging.info(f"Total cameras: {len(discovery_result['cameras'])}")
+                
+                if discovery_result['earliest_date']:
+                    logging.info(f"Earliest footage: {discovery_result['earliest_date'].date()}")
+                    logging.info(f"Latest footage: {discovery_result['latest_date'].date()}")
+                    logging.info(f"Total days with footage: {discovery_result['days_with_footage']}")
+                    
+                    logging.info("")
+                    logging.info("Per-camera footage ranges:")
+                    for camera_id, range_info in discovery_result['per_camera_ranges'].items():
+                        if range_info['earliest_date']:
+                            logging.info(
+                                f"  {range_info['camera_name']}: "
+                                f"{range_info['earliest_date'].date()} to "
+                                f"{range_info['latest_date'].date()}"
+                            )
+                        else:
+                            logging.info(f"  {range_info['camera_name']}: No footage")
+                else:
+                    logging.info("No footage found for any camera")
+                
+                logging.info("=" * 60)
+                
+            except Exception as e:
+                logging.error(f"Error during footage discovery: {e}")
+                if args.verbose:
+                    import traceback
+                    logging.error(traceback.format_exc())
+                return 1
+        
+        # Download footage if requested
+        if args.download:
+            logging.info("=" * 60)
+            logging.info("DOWNLOAD SCHEDULER")
+            logging.info("=" * 60)
+            
+            # Validate required arguments
+            if not args.start_date or not args.end_date:
+                logging.error("--start-date and --end-date are required with --download")
+                logging.error("Example: --download --start-date 2024-01-01 --end-date 2024-01-02")
+                return 1
+            
+            try:
+                # Parse dates
+                tz = footage_discovery.get_timezone(args.timezone)
+                
+                try:
+                    start_date_naive = datetime.strptime(args.start_date, '%Y-%m-%d')
+                    start_date = tz.localize(datetime.combine(start_date_naive.date(), time.min))
+                except ValueError:
+                    logging.error(f"Invalid start date format: {args.start_date}. Expected YYYY-MM-DD")
+                    return 1
+                
+                try:
+                    end_date_naive = datetime.strptime(args.end_date, '%Y-%m-%d')
+                    # End date should be at the end of the day (midnight of next day)
+                    end_date = tz.localize(datetime.combine(end_date_naive.date(), time.min)) + timedelta(days=1)
+                except ValueError:
+                    logging.error(f"Invalid end date format: {args.end_date}. Expected YYYY-MM-DD")
+                    return 1
+                
+                # Get camera list
+                logging.info("Retrieving camera list...")
+                all_cameras = downloader_adapter.list_cameras(
+                    address=config['address'],
+                    username=config['username'],
+                    password=config['password'],
+                )
+                
+                # Filter cameras if specific IDs were requested
+                if args.camera_ids:
+                    cameras = [cam for cam in all_cameras if cam['id'] in args.camera_ids]
+                    if len(cameras) < len(args.camera_ids):
+                        found_ids = {cam['id'] for cam in cameras}
+                        missing_ids = set(args.camera_ids) - found_ids
+                        logging.warning(f"Some camera IDs not found: {missing_ids}")
+                else:
+                    cameras = all_cameras
+                
+                if not cameras:
+                    logging.error("No cameras to download from")
+                    return 1
+                
+                logging.info(f"Will download from {len(cameras)} camera(s):")
+                for camera in cameras:
+                    logging.info(f"  - {camera['name']} (ID: {camera['id']})")
+                
+                # Determine output directory
+                if args.output_dir:
+                    output_dir = Path(args.output_dir)
+                else:
+                    script_dir = Path(__file__).parent.absolute()
+                    output_dir = script_dir / 'videos'
+                
+                output_dir.mkdir(parents=True, exist_ok=True)
+                logging.info(f"Output directory: {output_dir}")
+                
+                # Run the download scheduler
+                result = download_scheduler.download_footage_sequential(
+                    cameras=cameras,
+                    start_date=start_date,
+                    end_date=end_date,
+                    out_path=str(output_dir),
+                    address=config['address'],
+                    username=config['username'],
+                    password=config['password'],
+                    transcripts_dir=transcripts_dir,
+                )
+                
+                # Report results
+                if result['failed_chunks'] > 0:
+                    logging.warning(
+                        f"Download completed with {result['failed_chunks']} failed chunks. "
+                        "Check logs for details."
+                    )
+                    return 1
+                else:
+                    logging.info("All downloads completed successfully!")
+                    return 0
+                    
+            except Exception as e:
+                logging.error(f"Error during download: {e}")
+                if args.verbose:
+                    import traceback
+                    logging.error(traceback.format_exc())
+                return 1
+        
+        if not args.discover_footage and not args.download:
+            # Demonstrate the downloader adapter functionality
+            logging.info("Testing downloader adapter...")
+            try:
+                cameras = downloader_adapter.list_cameras(
+                    address=config['address'],
+                    username=config['username'],
+                    password=config['password'],
+                )
+                logging.info(f"Successfully listed {len(cameras)} camera(s) from UniFi Protect")
+                for camera in cameras:
+                    logging.info(f"  - {camera['name']} (ID: {camera['id']})")
+            except Exception as e:
+                logging.warning(f"Could not list cameras (this is OK if UniFi Protect is not accessible): {e}")
+        
+        logging.info("ubv_transcribe is ready to use")
+        
+        return 0
+        
+    finally:
+        # Clean up temporary directories and leftover files (best effort)
+        _cleanup_transcripts_directory(transcripts_dir)
+        _cleanup_temp_directories(temp_dir, output_dir)
+
+
+def _cleanup_temp_directories(temp_dir: Path, output_dir: Optional[Path]) -> None:
+    """
+    Clean up temporary directories and leftover files.
     
-    if not args.discover_footage and not args.download:
-        # Demonstrate the downloader adapter functionality
-        logging.info("Testing downloader adapter...")
+    This is a best-effort cleanup that removes:
+    - Temporary working directory
+    - WAV files directory
+    - Empty videos output directory
+    - Non-markdown files in transcripts directory
+    
+    Args:
+        temp_dir: Temporary working directory
+        output_dir: Videos output directory (may be None)
+    """
+    import shutil
+    import transcoder
+    
+    # Clean up transcoder WAV directory
+    try:
+        transcoder.cleanup_temp_files()
+    except Exception as e:
+        logging.warning(f"Failed to clean up transcoder temp files: {e}")
+    
+    # Clean up temp working directory
+    if temp_dir and temp_dir.exists():
         try:
-            cameras = downloader_adapter.list_cameras(
-                address=config['address'],
-                username=config['username'],
-                password=config['password'],
-            )
-            logging.info(f"Successfully listed {len(cameras)} camera(s) from UniFi Protect")
-            for camera in cameras:
-                logging.info(f"  - {camera['name']} (ID: {camera['id']})")
+            shutil.rmtree(temp_dir)
+            logging.info(f"Cleaned up temporary directory: {temp_dir}")
         except Exception as e:
-            logging.warning(f"Could not list cameras (this is OK if UniFi Protect is not accessible): {e}")
+            logging.warning(f"Failed to clean up temporary directory {temp_dir}: {e}")
     
-    logging.info("ubv_transcribe is ready to use")
+    # Clean up videos directory if it's empty
+    if output_dir and output_dir.exists():
+        try:
+            # Check if directory is empty
+            if not any(output_dir.iterdir()):
+                output_dir.rmdir()
+                logging.info(f"Removed empty output directory: {output_dir}")
+            else:
+                # Try to remove any leftover video files
+                for file_path in output_dir.glob('*.mp4'):
+                    try:
+                        file_path.unlink()
+                        logging.info(f"Cleaned up video file: {file_path}")
+                    except Exception as e:
+                        logging.warning(f"Failed to clean up video file {file_path}: {e}")
+                
+                # Check again if directory is now empty
+                if not any(output_dir.iterdir()):
+                    output_dir.rmdir()
+                    logging.info(f"Removed empty output directory: {output_dir}")
+        except Exception as e:
+            logging.warning(f"Failed to clean up output directory {output_dir}: {e}")
+
+
+def _cleanup_transcripts_directory(transcripts_dir: Path) -> None:
+    """
+    Clean up non-markdown files from the transcripts directory.
     
-    return 0
+    This ensures that only .md files remain in the transcripts directory,
+    removing any temporary files or other artifacts that may have been
+    accidentally created there.
+    
+    Args:
+        transcripts_dir: Transcripts directory to clean
+    """
+    if transcripts_dir is None or not transcripts_dir.exists():
+        return
+    
+    try:
+        # Walk through transcripts directory and subdirectories
+        for root, dirs, files in os.walk(transcripts_dir):
+            for filename in files:
+                file_path = Path(root) / filename
+                # Remove any non-markdown files
+                if not filename.endswith('.md'):
+                    try:
+                        file_path.unlink()
+                        logging.info(f"Cleaned up non-markdown file: {file_path}")
+                    except Exception as e:
+                        logging.warning(f"Failed to clean up non-markdown file {file_path}: {e}")
+    except Exception as e:
+        logging.warning(f"Failed to clean up transcripts directory {transcripts_dir}: {e}")
 
 
 if __name__ == '__main__':
